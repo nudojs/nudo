@@ -167,29 +167,23 @@ function slotAbsOf(a: Abs, k: string, fallback: Abs): Abs {
   }
 }
 
-/**
- * Abs → TS 类型串。有损：pred / 非 lit term 落到 shape 基类型。
- * `typeVars`：term var id → TS 类型参数名（HOF 泛型投影时传入；
- * `any`+var 在此映射下渲染为该参数名，否则 `unknown`）。
- */
-
-
 /** dts 类型文本：唯一的 IR 渲染入口。 */
 function absToTSTypeIr(a: Abs, typeVars?: Map<string, string>): string {
+  const ctx = currentDtsContext;
   const t = dtsTypeOfAbs(a, {
-    readonlyValues: currentReadonlySlots,
-    ...(currentBrandScope === undefined ? {} : { brandScope: currentBrandScope }),
+    readonlyValues: ctx.readonlyValues,
+    ...(ctx.brandScope === undefined ? {} : { brandScope: ctx.brandScope }),
     runtimeGlobalCtor: isRuntimeGlobalCtorName,
     ...(typeVars === undefined ? {} : { typeVars }),
-    ...(currentObjectFnReturnOverrides === undefined
+    ...(ctx.objectFnReturnOverrides === undefined
       ? {}
-      : { objectFnReturnOverrides: currentObjectFnReturnOverrides }),
-    ...(currentSymbolReturnOverrides === undefined
+      : { objectFnReturnOverrides: ctx.objectFnReturnOverrides }),
+    ...(ctx.symbolReturnOverrides === undefined
       ? {}
-      : { symbolReturnOverrides: currentSymbolReturnOverrides }),
-    ...(currentUserSymbolKeys === undefined
+      : { symbolReturnOverrides: ctx.symbolReturnOverrides }),
+    ...(ctx.userSymbolKeys === undefined
       ? {}
-      : { userSymbolKeys: [...currentUserSymbolKeys] }),
+      : { userSymbolKeys: [...ctx.userSymbolKeys] }),
   });
   return renderDtsType(t);
 }
@@ -226,89 +220,29 @@ type BrandScope = {
   requiredArgFillers: ReadonlyMap<string, readonly string[]>;
 };
 
-let currentBrandScope: BrandScope | undefined;
-
-/** 在给定 brand 解析口径下投影（作用域内恢复旧口径） */
-function withBrandScope<T>(scope: BrandScope, fn: () => T): T {
-  const prev = currentBrandScope;
-  currentBrandScope = scope;
-  try {
-    return fn();
-  } finally {
-    currentBrandScope = prev;
-  }
-}
-
 /**
- * Bug 77：模块级 `as const` 值声明通道专享的只读渲染开关。
- * 只在 `dtsValueDeclarations` 对 `as const` 绑定开启 ⇒ 对象槽渲染
- * `readonly k: …`；不影响其它 dts 类型调用（返回位 / 参数位 / 单值投影
- * 一律保持既有文本，避免把报告未列的既有行为改坏）。
+ * dts 类型投影的完整上下文。此前拆成 5 个可变全局（brandScope / readonly /
+ * symbol 覆盖 / user symbol 队列 / object fn 覆盖），新增一维就必须在
+ * `absToTSTypeIr` 再手工搬运一次。现在只有这一份快照。
  */
-let currentReadonlySlots = false;
-function withReadonlySlots<T>(fn: () => T): T {
-  const prev = currentReadonlySlots;
-  currentReadonlySlots = true;
-  try {
-    return fn();
-  } finally {
-    currentReadonlySlots = prev;
-  }
-}
+type DtsProjectionContext = {
+  readonlyValues: boolean;
+  brandScope?: BrandScope;
+  symbolReturnOverrides?: ReadonlyMap<string, string>;
+  userSymbolKeys?: readonly string[];
+  objectFnReturnOverrides?: ReadonlyMap<string, string>;
+};
 
-/**
- * BUG-236：对象字面量 **symbol 方法**的返回注解文本（`[Symbol.iterator]():
- * Iterator<number>`）。
- *
- * 泛型 / 别名注解不映射成 Abs 形状（core `absShapeForTsTypeText` 只映射 JS
- * 一等类型）⇒ 经 Abs 叠加拿不到返回类型，symbol 成员行只能发 `unknown`，
- * 消费方 `[...obj]` 仍被 TS2488 挡住（可迭代判定要的是迭代器返回类型）。
- * 与 `currentReadonlySlots` 同一机制：只在渲染这一份值声明时生效。
- */
-let currentSymbolReturnOverrides: ReadonlyMap<string, string> | undefined;
-function withSymbolReturnOverrides<T>(overrides: ReadonlyMap<string, string> | undefined, fn: () => T): T {
-  if (overrides === undefined || overrides.size === 0) return fn();
-  const prev = currentSymbolReturnOverrides;
-  currentSymbolReturnOverrides = overrides;
-  try {
-    return fn();
-  } finally {
-    currentSymbolReturnOverrides = prev;
-  }
-}
+let currentDtsContext: DtsProjectionContext = { readonlyValues: false };
 
-/**
- * BUG-263：用户符号成员键的源码名队列（按对象字面量属性顺序消费）。
- * well-known symbol 不消费本队列（它们有稳定映射）。
- */
-let currentUserSymbolKeys: string[] | undefined;
-function withUserSymbolKeys<T>(keys: readonly string[] | undefined, fn: () => T): T {
-  if (keys === undefined || keys.length === 0) return fn();
-  const prev = currentUserSymbolKeys;
-  currentUserSymbolKeys = [...keys];
+/** 在给定投影上下文下渲染；嵌套时按 patch 合并并恢复。 */
+function withDtsContext<T>(patch: Partial<DtsProjectionContext>, fn: () => T): T {
+  const prev = currentDtsContext;
+  currentDtsContext = { ...prev, ...patch };
   try {
     return fn();
   } finally {
-    currentUserSymbolKeys = prev;
-  }
-}
-
-/**
- * BUG-271：对象字面量方法 / 箭头值的**返回注解原文**（`Promise<number>` 等）。
- *
- * Abs 的 fn shape 只能承载 Shape 可映射的返回类型；`Promise<number>` / 具名
- * 别名 / `string | null` 被 Shape 闸门丢成 `unknown`。源码注解在采集期已有，
- * 渲染时按成员键覆盖返回位文本。
- */
-let currentObjectFnReturnOverrides: ReadonlyMap<string, string> | undefined;
-function withObjectFnReturnOverrides<T>(overrides: ReadonlyMap<string, string> | undefined, fn: () => T): T {
-  if (overrides === undefined || overrides.size === 0) return fn();
-  const prev = currentObjectFnReturnOverrides;
-  currentObjectFnReturnOverrides = overrides;
-  try {
-    return fn();
-  } finally {
-    currentObjectFnReturnOverrides = prev;
+    currentDtsContext = prev;
   }
 }
 
@@ -504,36 +438,6 @@ function surfaceSymbolKeyName(n: SurfaceNode | undefined): string | undefined {
   const engineKey = `@@${prop}`;
   return WELL_KNOWN_SYMBOLS.has(engineKey) ? engineKey : undefined;
 }
-
-/**
- * 符号键槽 → TS 符号键成员行（`[Symbol.iterator](): T`）；未登记的符号键 ⇒
- * undefined（TS 没有任意 symbol 键的类型语法 ⇒ 有损跳过）。
- */
-
-
-/**
- * BUG-271：把对象字面量方法的返回位换成源码注解原文（只替换 `=>` 之后的
- * 返回类型；形参面保持 Abs 投影）。
- */
-function applyObjectFnReturnOverride(key: string, ts: string): string {
-  const override = currentObjectFnReturnOverrides?.get(key);
-  if (override === undefined) return ts;
-  // 只替换**外层**函数类型的返回位：返回类型本身可能是对象 / 函数类型，
-  // 里面还有嵌套 `=>`（`() => { get: () => number }`）⇒ lastIndexOf 会把
-  // 内层返回位改掉，得到 `getMilliseconds: () => Date` 这类错形。
-  let depth = 0;
-  for (let i = 0; i < ts.length - 1; i++) {
-    const ch = ts[i]!;
-    if (ch === "(" || ch === "[" || ch === "{" || ch === "<") depth++;
-    else if (ch === ")" || ch === "]" || ch === "}" || (ch === ">" && ts[i - 1] !== "=")) depth--;
-    if (depth === 0 && ch === "=" && ts[i + 1] === ">") {
-      return `${ts.slice(0, i + 2)} ${override}`;
-    }
-  }
-  return ts;
-}
-
-
 
 /** case 在参数位 i 的 Abs */
 function caseArgAbs(c: CaseResult, i: number): Abs | undefined {
@@ -2987,7 +2891,7 @@ export function projectFunctionDts(
     // Bug 57：类型形参子句按普查名查（类成员 `C.m`，模块函数 `gen`）。
     typeParamKey: fn.name,
   };
-  const proj = withBrandScope(brandScopeOf(surface), () =>
+  const proj = withDtsContext({ brandScope: brandScopeOf(surface) }, () =>
     projectFunctionDtsInner(fn, contract, ctx),
   );
   // 「第三种」：声明 vs 观测，**只落台账、绝不覆盖产物**。手写契约覆盖返回位
@@ -6269,7 +6173,7 @@ export function projectModuleDts(
   extras?: DtsModuleExtras,
 ): DtsModuleProjection {
   // Bug 233：类字段声明（brand 实例形状）也要在 brand 解析口径内渲染。
-  return withBrandScope(brandScopeOf(surface), () =>
+  return withDtsContext({ brandScope: brandScopeOf(surface) }, () =>
     projectModuleDtsInner(surface, entries, extras),
   );
 }
@@ -7427,7 +7331,7 @@ function dtsValueDeclarations(
           annotationRefs,
           analyzedMemberReturns,
         );
-      // BUG-236：symbol 方法的返回注解走文本旁路（见 withSymbolReturnOverrides）
+      // BUG-236：symbol 方法的返回注解走上下文旁路
       const symbolReturns = new Map<string, string>();
       // BUG-271：普通对象方法的返回注解（`Promise<number>` / 具名别名 /
       // `string | null`）不能经 Shape 闸门——源码注解直接覆盖返回位文本。
@@ -7451,12 +7355,18 @@ function dtsValueDeclarations(
         return absToTSTypeIr(widenModuleValueAbs(annotated));
       };
       const render = (): string =>
-        withUserSymbolKeys(value.userSymbolKeys, () =>
-          withObjectFnReturnOverrides(objectReturns, () =>
-            withSymbolReturnOverrides(symbolReturns, renderAbs),
-          ),
+        withDtsContext(
+          {
+            ...(value.userSymbolKeys
+              ? { userSymbolKeys: [...value.userSymbolKeys] }
+              : {}),
+            ...(objectReturns.size > 0 ? { objectFnReturnOverrides: objectReturns } : {}),
+            ...(symbolReturns.size > 0 ? { symbolReturnOverrides: symbolReturns } : {}),
+          },
+          renderAbs,
         );
-      const typeText = declaredText ?? (value.asConst ? withReadonlySlots(render) : render());
+      const typeText =
+        declaredText ?? (value.asConst ? withDtsContext({ readonlyValues: true }, render) : render());
       decl = `declare ${value.kind} ${local}: ${typeText};`;
     }
     if (primary === local) {
