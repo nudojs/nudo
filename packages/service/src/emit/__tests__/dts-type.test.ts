@@ -157,6 +157,30 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
     ).toBeUndefined();
   });
 
+  it("用户符号队列 / internal 槽跳过", () => {
+    const symObj = mk({
+      k: "obj",
+      slots: {
+        "@@sym#1": { value: num(), symbolKey: true },
+        "@@sym#2": { value: str(), symbolKey: true },
+      },
+    } as never);
+    expect(
+      renderDtsType(
+        dtsTypeOfAbs(symObj, { userSymbolKeys: ["foo", "bar"] })!,
+      ),
+    ).toBe("{ [foo]: number; [bar]: string }");
+
+    const privateObj = mk({
+      k: "obj",
+      slots: {
+        "#x": { value: num(), internal: true },
+        a: { value: num() },
+      },
+    } as never);
+    expect(ir(privateObj)).toBe(absToTSType(privateObj));
+  });
+
   it("联合：去重 / 丢弃 never", () => {
     const union = joinAbs(joinAbs(num(), str()), mk({ k: "never" }));
     expect(ir(union)).toBe(absToTSType(union));

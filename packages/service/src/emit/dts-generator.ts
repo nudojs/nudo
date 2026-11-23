@@ -226,6 +226,9 @@ function absToTSTypeIr(a: Abs, typeVars?: Map<string, string>): string {
     ...(currentSymbolReturnOverrides === undefined
       ? {}
       : { symbolReturnOverrides: currentSymbolReturnOverrides }),
+    ...(currentUserSymbolKeys === undefined
+      ? {}
+      : { userSymbolKeys: [...currentUserSymbolKeys] }),
   });
   return t === undefined ? absToTSType(a, typeVars) : renderDtsType(t);
 }

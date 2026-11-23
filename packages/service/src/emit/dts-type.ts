@@ -131,6 +131,8 @@ export type DtsTypeOpts = {
   objectFnReturnOverrides?: ReadonlyMap<string, string>;
   /** symbol 方法的返回注解原文（无 Abs 返回位时兜底） */
   symbolReturnOverrides?: ReadonlyMap<string, string>;
+  /** 用户符号键的源码名队列（按出现序消费，`{ [tag]: 1 }` ⇒ `[tag]`） */
+  userSymbolKeys?: string[];
   /** @internal 递归环检测（DESIGN-001：Abs 允许成环） */
   seen?: Set<Abs>;
 };
@@ -345,6 +347,7 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
         for (const [k, slot] of sideEntries) {
           const s = objectSlotOf(a, k, slot, opts);
           if (s === undefined) return undefined;
+          if (s === null) continue;
           sideSlots.push(s);
         }
         return {
@@ -366,6 +369,7 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
       for (const [k, slot] of entries) {
         const s = objectSlotOf(a, k, slot, opts);
         if (s === undefined) return undefined;
+        if (s === null) continue;
         slots.push(s);
       }
       return { kind: "object", slots, ...(index ? { index } : {}) };
@@ -396,13 +400,17 @@ function objectSlotOf(
   k: string,
   slot: { value: Abs; optional?: boolean; readonly?: boolean; symbolKey?: boolean },
   opts: DtsTypeOpts,
-): DtsObjectSlot | undefined {
+): DtsObjectSlot | null | undefined {
   const flags = {
     ...(slot.optional ? { optional: true } : {}),
     ...(slot.readonly === true || opts.readonlyValues ? { readonly: true } : {}),
   };
   if (slot.symbolKey === true) {
-    const sym = WELL_KNOWN_SYMBOLS.get(k);
+    const userKey =
+      WELL_KNOWN_SYMBOLS.has(k) || !k.startsWith("@@sym#")
+        ? undefined
+        : opts.userSymbolKeys?.shift();
+    const sym = WELL_KNOWN_SYMBOLS.get(k) ?? userKey;
     if (sym === undefined) return undefined;
     if (slot.value.shape.k === "fn") {
       const fromAbs = slot.value.shape.returnType
@@ -415,7 +423,15 @@ function objectSlotOf(
     const t = dtsTypeOfAbs(slot.value, opts);
     return t === undefined ? undefined : { key: sym, symbol: true, type: t };
   }
-  if (isHiddenInternalSlot(k, slot)) return undefined;
+  if (isHiddenInternalSlot(k, slot)) {
+    // 生成器 / 迭代器协议对象由 iteratorTSType 特判 ⇒ 回落；其余 internal
+    // 槽（私有字段等）在 absToTSType 里被跳过 ⇒ IR 同样跳过。
+    const gen =
+      a.facets?.brand === "Generator" ||
+      a.facets?.brand === "AsyncGenerator" ||
+      (a.shape.k === "obj" && a.shape.slots["next"] !== undefined);
+    return gen ? undefined : null;
+  }
 
   let source = slot.value;
   if (slot.value.term !== undefined) {
