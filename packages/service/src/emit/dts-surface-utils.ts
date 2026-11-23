@@ -95,6 +95,37 @@ export function patternBindingNames(id: SurfaceNode | undefined): string[] {
   return out;
 }
 
+/** 值导出右值是否是函数 / 类（这类走函数声明面，不发值声明） */
+export function isFnOrClassInit(n: SurfaceNode | undefined): boolean {
+  return (
+    n?.type === "FunctionExpression" ||
+    n?.type === "ArrowFunctionExpression" ||
+    n?.type === "ClassExpression" ||
+    n?.type === "ClassDeclaration" ||
+    n?.type === "FunctionDeclaration"
+  );
+}
+
+/** `module.exports` / `exports` → true */
+export function isExportsTarget(n: SurfaceNode | undefined): boolean {
+  if (!n) return false;
+  if (n.type === "Identifier") return n.name === "exports";
+  if (n.type === "MemberExpression") {
+    return (
+      surfaceName(n.object as SurfaceNode | undefined) === "module" &&
+      surfaceName(n.property as SurfaceNode | undefined) === "exports"
+    );
+  }
+  return false;
+}
+
+/** `exports.a` / `module.exports.a` → "a" */
+export function cjsPropName(left: SurfaceNode | undefined): string | undefined {
+  if (!left || left.type !== "MemberExpression" || left.computed === true) return undefined;
+  if (!isExportsTarget(left.object as SurfaceNode | undefined)) return undefined;
+  return surfaceName(left.property as SurfaceNode | undefined);
+}
+
 /** 源码片段（`keepTs` 的 AST 上类型注解仍在 ⇒ 直接切原文；越界 ⇒ undefined） */
 export function surfaceSlice(source: string, n: SurfaceNode | undefined): string | undefined {
   const start = n?.start;

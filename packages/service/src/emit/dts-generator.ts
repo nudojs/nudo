@@ -56,6 +56,9 @@ import {
   typeofValueRefs,
 } from "./dts-annotation-text.ts";
 import {
+  cjsPropName,
+  isExportsTarget,
+  isFnOrClassInit,
   nodeAnnotationText,
   patternBindingNames,
   safeFieldTypeAnnotation,
@@ -3166,13 +3169,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     if (!exportName) return;
     if (!surface.exportBindings.has(exportName)) surface.exportBindings.set(exportName, local);
   };
-  /** 值导出右值是否是函数 / 类（这类走函数声明面，不发值声明） */
-  const isFnOrClassInit = (n: SurfaceNode | undefined): boolean =>
-    n?.type === "FunctionExpression" ||
-    n?.type === "ArrowFunctionExpression" ||
-    n?.type === "ClassExpression" ||
-    n?.type === "ClassDeclaration" ||
-    n?.type === "FunctionDeclaration";
+
   /**
    * Bug 62：CJS 值导出登记 `surface.values`（此前只 `bind` ⇒ 导出名表有、
    * 值声明表没有 ⇒ dts 面整体缺席；值-only 模块还触发 export 命令空产物早退）。
@@ -3182,23 +3179,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     if (!name || surface.values.has(name)) return;
     surface.values.set(name, { kind: "const", typeText: valueTypeTextOfInit(init, source) });
   };
-  /** `module.exports` / `exports` → true */  const isExportsTarget = (n: SurfaceNode | undefined): boolean => {
-    if (!n) return false;
-    if (n.type === "Identifier") return n.name === "exports";
-    if (n.type === "MemberExpression") {
-      return (
-        surfaceName(n.object as SurfaceNode | undefined) === "module" &&
-        surfaceName(n.property as SurfaceNode | undefined) === "exports"
-      );
-    }
-    return false;
-  };
-  /** `exports.a` / `module.exports.a` → "a" */
-  const cjsPropName = (left: SurfaceNode | undefined): string | undefined => {
-    if (!left || left.type !== "MemberExpression" || left.computed === true) return undefined;
-    if (!isExportsTarget(left.object as SurfaceNode | undefined)) return undefined;
-    return surfaceName(left.property as SurfaceNode | undefined);
-  };
+
 
   // ── 类声明（本地名 → AST 节点） ──
   const classDecls = new Map<string, SurfaceNode>();
