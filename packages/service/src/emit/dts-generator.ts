@@ -57,15 +57,11 @@ import {
   splitTopLevel,
 } from "./dts-text.ts";
 import {
-  analysisLineParamNames,
   classMethodDeclLines,
   dtsClassDeclaration,
   fieldPrefix,
   memberKeyText,
-  paramBaseName,
-  refineObservedReturn,
   staticFieldPrefix,
-  withMethodModifier,
 } from "./dts-class-emit.ts";
 import {
   ambientFunctionDeclarationText,

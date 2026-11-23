@@ -36,6 +36,26 @@ function expectValidType(text: string, label?: string): void {
   expect(check.ok, `${label ?? text}\n${check.stderr}`).toBe(true);
 }
 
+/** tsc 语义对拍：渲染类型必须与期望类型**完全相同**（条件类型等价的严格版）。 */
+function expectExactType(actual: string, expected: string, label: string): void {
+  const check = tscNoEmitSingle(
+    [
+      "type IsExact<A, B> =",
+      "  (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2)",
+      "    ? (<T>() => T extends B ? 1 : 2) extends (<T>() => T extends A ? 1 : 2)",
+      "      ? true",
+      "      : false",
+      "    : false;",
+      `type Actual = ${actual};`,
+      `const ok: IsExact<Actual, ${expected}> = true;`,
+    ].join("\n"),
+    "precedence-exact.ts",
+  );
+  expect(check.ok, `${label}\nactual: ${actual}\nexpected: ${expected}\n${check.stderr}`).toBe(
+    true,
+  );
+}
+
 describe("dts 类型 IR 优先级矩阵", () => {
   it("array：union / fn / intersection 元素都加括号", () => {
     const union = mk({ k: "arr", element: joinAbs(num(), str()) });
@@ -65,6 +85,31 @@ describe("dts 类型 IR 优先级矩阵", () => {
     expect(render(restFn)).toBe("[string, ...((x: number) => string)[]]");
     expect(render(restView)).toBe('[string, ...(["a"] & { index: 0 })[]]');
     for (const a of [restUnion, restFn, restView]) expectValidType(render(a));
+  });
+
+  it("tsc 语义等价：括号只影响解析，不改变类型", () => {
+    const arrUnion = render(mk({ k: "arr", element: joinAbs(num(), str()) }));
+    const arrFn = render(mk({ k: "arr", element: fn(["x"], [num()], str()) }));
+    const restUnion = render(
+      mk({ k: "tuple", elements: [str()], rest: joinAbs(num(), str()) }),
+    );
+    const optUnion = render(
+      mk({
+        k: "obj",
+        slots: { f: { value: joinAbs(num(), str()), optional: true } },
+      } as never),
+    );
+    const roArr = render(mk({ k: "arr", element: num() }), { readonlyValues: true });
+    const unionFn = render(
+      mk({ k: "sum", members: [fn(["x"], [num()], str()), num()] }),
+    );
+
+    expectExactType(arrUnion, "(number | string)[]", "array union");
+    expectExactType(arrFn, "Array<(x: number) => string>", "array fn");
+    expectExactType(restUnion, "[string, ...(number | string)[]]", "tuple rest union");
+    expectExactType(optUnion, "{ f?: number | string }", "optional union");
+    expectExactType(roArr, "ReadonlyArray<number>", "readonly array");
+    expectExactType(unionFn, "number | ((x: number) => string)", "union fn");
   });
 
   it("union：fn 加括号；intersection 依赖 & 高于 | 的优先级", () => {
