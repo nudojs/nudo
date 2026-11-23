@@ -71,6 +71,12 @@ import {
   surfaceComputedKeyName,
 } from "./dts-surface-keys.ts";
 import {
+  coalesceClassMethodOverloads,
+  indexSignatureText,
+  superTypeArgsText,
+  typeParamClauseText,
+} from "./dts-surface-class.ts";
+import {
   classFieldType,
   classFieldTypeOfInit,
   constAwareValueType,
@@ -3022,21 +3028,10 @@ function patternBindingNames(id: SurfaceNode | undefined): string[] {
 
 
 /** 类型形参声明节点 → 子句原文（`<T, U = string>`）；无 source / 节点 ⇒ undefined。 */
-function typeParamClauseText(node: SurfaceNode | undefined, source: string | undefined): string | undefined {
-  if (!source || !node) return undefined;
-  const text = surfaceSlice(source, node);
-  return text && /^</.test(text) ? text : undefined;
-}
+
 
 /** 超类类型实参实例化节点 → 各实参的源码原文（`extends Base<string>` ⇒ `["string"]`）。 */
-function superTypeArgsText(node: SurfaceNode | undefined, source: string | undefined): string[] {
-  if (!source || !node) return [];
-  const params = node.params as SurfaceNode[] | undefined;
-  if (!Array.isArray(params)) return [];
-  return params
-    .map((p) => surfaceSlice(source, p))
-    .filter((t): t is string => t !== undefined && t.length > 0);
-}
+
 
 /** 节点上的 TS 类型注解 → 清洗后的类型文本（`: T` 的 T）。 */
 
@@ -3068,13 +3063,7 @@ function superTypeArgsText(node: SurfaceNode | undefined, source: string | undef
 
 
 /** Bug 88：类体 `TSIndexSignature` → ambient 声明文本（`[key: string]: …;`）。 */
-function indexSignatureText(mem: SurfaceNode, source: string | undefined): string | undefined {
-  if (!source) return undefined;
-  const raw = surfaceSlice(source, mem);
-  if (!raw) return undefined;
-  const cleaned = tsAnnotationTypeText(raw.replace(/;\s*$/, ""));
-  return cleaned ? `${cleaned};` : undefined;
-}
+
 
 /**
  * BUG-175：把同名**无体声明**合并到实现条目上（`overloads`），无实现时
@@ -3084,43 +3073,7 @@ function indexSignatureText(mem: SurfaceNode, source: string | undefined): strin
  * 形参注解通常是 `any`，混进重载集就是额外 catch-all 重载（消费方传入 tsc
  * 会拒绝的实参也编译通过）。
  */
-function coalesceClassMethodOverloads(list: DtsClassMethodSurface[]): void {
-  const groups = new Map<string, DtsClassMethodSurface[]>();
-  for (const e of list) {
-    const g = groups.get(e.name);
-    if (g) g.push(e);
-    else groups.set(e.name, [e]);
-  }
-  const drop = new Set<DtsClassMethodSurface>();
-  for (const [, group] of groups) {
-    const decls = group.filter((e) => e.declarationOnly === true);
-    if (decls.length === 0) continue;
-    const impl = group.find((e) => e.declarationOnly !== true);
-    const keep = impl ?? decls[0]!;
-    const signatures = impl === undefined && decls.length === 1 ? [] : decls;
-    if (signatures.length > 0) {
-      keep.overloads = signatures.map((e) => ({
-        name: e.name,
-        params: e.params,
-        ...(e.paramTypes !== undefined ? { paramTypes: e.paramTypes } : {}),
-        ...(e.accessibility !== undefined ? { accessibility: e.accessibility } : {}),
-        ...(e.isAbstract === true ? { isAbstract: true } : {}),
-        ...(e.returnType !== undefined ? { returnType: e.returnType } : {}),
-        ...(e.typeParams !== undefined ? { typeParams: e.typeParams } : {}),
-        ...(e.optional === true ? { optional: true } : {}),
-        ...(e.symbolKey === true ? { symbolKey: true } : {}),
-      }));
-    }
-    for (const e of group) if (e !== keep) drop.add(e);
-  }
-  if (drop.size === 0) return;
-  let w = 0;
-  for (let r = 0; r < list.length; r++) {
-    const e = list[r]!;
-    if (!drop.has(e)) list[w++] = e;
-  }
-  list.length = w;
-}
+
 
 /**
  * 类声明面扫描（实例方法 / 静态方法 / 构造器形参 / 类型形参 / 超类）。
