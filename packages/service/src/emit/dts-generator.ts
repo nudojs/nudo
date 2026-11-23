@@ -77,7 +77,10 @@ import {
 import {
   coalesceClassMethodOverloads,
   indexSignatureText,
+  inheritedMemberViews,
+  inheritedStaticNamesOf,
   scanClassSurface,
+  superClauseText,
   superTypeArgsText,
   typeParamClauseText,
 } from "./dts-surface-class.ts";
@@ -3644,22 +3647,7 @@ function projectModuleDtsInner(
  * 走本地类）；基类自己 override 的方法按 ES 语义以最近一层为准——这里取并集
  * 即可，因为「子类 own 实例方法同名」会在调用方（`staticOnly`）里把该名字剔掉。
  */
-function inheritedStaticNamesOf(
-  className: string,
-  surface: DtsModuleSurface | undefined,
-): Set<string> {
-  const out = new Set<string>();
-  const seen = new Set<string>([className]);
-  let base = surface?.classes.get(className)?.superClass;
-  while (base !== undefined && !seen.has(base)) {
-    seen.add(base);
-    const cls = surface?.classes.get(base);
-    if (!cls) break;
-    for (const m of cls.staticMethods ?? []) out.add(m.name);
-    base = cls.superClass;
-  }
-  return out;
-}
+
 
 /**
  * BUG-194：类型参数字面替换（`get(): T` + `{T → number}` ⇒ `get(): number`）。
@@ -3668,30 +3656,10 @@ function inheritedStaticNamesOf(
  * （`{ T: number }`）不动。基类 own 方法的声明行是在基类作用域里算出来的，
  * 落到子类必须按 `extends Base<…>` 的实参代入。
  */
-function substituteTypeParams(text: string, subst: ReadonlyMap<string, string>): string {
-  if (subst.size === 0) return text;
-  let out = text;
-  for (const [name, value] of subst) {
-    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    out = out.replace(
-      new RegExp(`(?<![\\w$])${escaped}(?![\\w$])(?!\\s*\\??\\s*:)`, "g"),
-      () => value,
-    );
-  }
-  return out;
-}
+
 
 /** 成员在某个类的源码面里的访问修饰符（实例 / 静态方法；查不到 ⇒ undefined）。 */
-function methodAccessibilityOf(
-  cls: DtsClassMemberSurface | undefined,
-  member: string,
-): "private" | "protected" | "public" | undefined {
-  if (!cls) return undefined;
-  const hit = [...(cls.instanceMethods ?? []), ...(cls.staticMethods ?? [])].find(
-    (m) => m.name === member,
-  );
-  return hit?.accessibility;
-}
+
 
 /**
  * BUG-194 / BUG-228：**继承来的实例方法**的声明视图。
@@ -3705,90 +3673,9 @@ function methodAccessibilityOf(
  * `lines === undefined` 表示该成员**不得重发**（private：TS 要求同一个私有
  * 声明，子类重发即 TS2415）。
  */
-function inheritedMemberViews(
-  className: string,
-  surface: DtsModuleSurface | undefined,
-  members: ReadonlyMap<string, Array<{ member: string; lines: string[] }>>,
-): Map<string, { lines?: string[]; accessibility?: "private" | "protected" | "public" }> {
-  const out = new Map<string, { lines?: string[]; accessibility?: "private" | "protected" | "public" }>();
-  const own = surface?.classes.get(className);
-  if (!surface || !own) return out;
-  const ownNames = new Set(
-    [...(own.instanceMethods ?? []), ...(own.staticMethods ?? [])].map((m) => m.name),
-  );
-  let cur = own.superClass;
-  if (cur === undefined) return out;
-  let subst = new Map<string, string>();
-  const firstParams = surface.classes.get(cur)?.typeParams ?? [];
-  const firstArgs = own.superTypeArguments ?? [];
-  firstParams.forEach((p, i) => subst.set(p, firstArgs[i] ?? "unknown"));
-  while (cur !== undefined) {
-    const base = surface.classes.get(cur);
-    if (!base) break;
-    // BUG-386：未导出基类不在分析面普查表里（`members` 只收导出类）⇒
-    // 从**源码面**（surface.classes 的方法签名）补继承视图。已导出的基类
-    // 仍优先用分析面行（含观测收窄的证据）。
-    const analysisEntries = members.get(cur) ?? [];
-    const seenMembers = new Set(analysisEntries.map((e) => e.member));
-    const sourceEntries: Array<{ member: string; lines: string[] }> = [];
-    for (const m of base.instanceMethods ?? []) {
-      if (seenMembers.has(m.name)) continue;
-      const params = m.params
-        .map((name, i) => {
-          const type = m.paramTypes?.[i] ?? m.paramDefaults?.[i];
-          return type === undefined ? name : `${name}: ${type}`;
-        })
-        .join(", ");
-      const ret = m.returnType ?? m.annotationReturnType ?? m.observedReturnType ?? "unknown";
-      sourceEntries.push({
-        member: m.name,
-        lines: [`${m.name}${m.optional === true ? "?" : ""}${m.typeParams ?? ""}(${params}): ${ret};`],
-      });
-    }
-    for (const entry of [...analysisEntries, ...sourceEntries]) {
-      if (ownNames.has(entry.member)) continue; // 子类 own 方法覆盖
-      if (out.has(entry.member)) continue; // 最近的声明类优先
-      const accessibility = methodAccessibilityOf(base, entry.member);
-      if (accessibility === "private") {
-        out.set(entry.member, { accessibility });
-        continue;
-      }
-      out.set(entry.member, {
-        lines: entry.lines.map((l) => substituteTypeParams(l, subst)),
-        ...(accessibility !== undefined ? { accessibility } : {}),
-      });
-    }
-    const next = base.superClass;
-    if (next === undefined) break;
-    const parentParams = surface.classes.get(next)?.typeParams ?? [];
-    const parentArgs = (base.superTypeArguments ?? []).map((a) =>
-      substituteTypeParams(a, subst),
-    );
-    const nextSubst = new Map<string, string>();
-    parentParams.forEach((p, i) => nextSubst.set(p, parentArgs[i] ?? "unknown"));
-    subst = nextSubst;
-    cur = next;
-  }
-  return out;
-}
 
-function superClauseText(
-  className: string,
-  surface: DtsModuleSurface | undefined,
-): string {
-  const cls = surface?.classes.get(className);
-  const superName = cls?.superClass;
-  if (!superName) return "";
-  const builtin = BUILTIN_GENERIC_BRANDS.get(superName);
-  if (builtin !== undefined) return ` extends ${builtin}`;
-  // Bug 73：源码里**显式写下**的超类类型实参（`extends Base<string>`）优先——
-  // 只查本模块类会漏掉导入的泛型基类，产物自身报 TS2314。
-  const args = cls?.superTypeArguments;
-  if (args && args.length > 0) return ` extends ${superName}<${args.join(", ")}>`;
-  const baseParams = surface?.classes.get(superName)?.typeParams ?? [];
-  const localArgs = baseParams.length > 0 ? `<${baseParams.map(() => "unknown").join(", ")}>` : "";
-  return ` extends ${superName}${localArgs}`;
-}
+
+
 
 /**
  * 对象字面量成员函数的源码注解叠加（BUG-157）：**只补缺**——形参位没有
