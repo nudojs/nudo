@@ -41,6 +41,7 @@ import {
 import {
   BRAND_TYPE_ALIASES,
   BUILTIN_GENERIC_BRANDS,
+  WELL_KNOWN_SYMBOLS,
   dtsTypeOfAbs,
   renderDtsType,
 } from "./dts-type.ts";
@@ -613,23 +614,6 @@ function iteratorTSType(
   }
   return `IterableIterator<${elemType}>`;
 }
-
-/** 引擎的符号键投影（`"@@X"`）→ TS 符号键成员名 */
-const WELL_KNOWN_SYMBOLS = new Map<string, string>([
-  ["@@iterator", "Symbol.iterator"],
-  ["@@asyncIterator", "Symbol.asyncIterator"],
-  ["@@toStringTag", "Symbol.toStringTag"],
-  ["@@toPrimitive", "Symbol.toPrimitive"],
-  ["@@hasInstance", "Symbol.hasInstance"],
-  ["@@isConcatSpreadable", "Symbol.isConcatSpreadable"],
-  ["@@match", "Symbol.match"],
-  ["@@matchAll", "Symbol.matchAll"],
-  ["@@replace", "Symbol.replace"],
-  ["@@search", "Symbol.search"],
-  ["@@species", "Symbol.species"],
-  ["@@split", "Symbol.split"],
-  ["@@unscopables", "Symbol.unscopables"],
-]);
 
 /**
  * BUG-216 / BUG-236：计算键里的 **well-known symbol** → 引擎符号键名

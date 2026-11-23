@@ -25,6 +25,23 @@ import {
 } from "@nudojs/core/internal";
 import { isHiddenInternalSlot } from "./internal-slot.ts";
 
+/** 引擎的符号键投影（`"@@X"`）→ TS 符号键成员名。 */
+export const WELL_KNOWN_SYMBOLS = new Map<string, string>([
+  ["@@iterator", "Symbol.iterator"],
+  ["@@asyncIterator", "Symbol.asyncIterator"],
+  ["@@toStringTag", "Symbol.toStringTag"],
+  ["@@toPrimitive", "Symbol.toPrimitive"],
+  ["@@hasInstance", "Symbol.hasInstance"],
+  ["@@isConcatSpreadable", "Symbol.isConcatSpreadable"],
+  ["@@match", "Symbol.match"],
+  ["@@matchAll", "Symbol.matchAll"],
+  ["@@replace", "Symbol.replace"],
+  ["@@search", "Symbol.search"],
+  ["@@species", "Symbol.species"],
+  ["@@split", "Symbol.split"],
+  ["@@unscopables", "Symbol.unscopables"],
+]);
+
 /** brand 名 → TS 类型别名（Arguments 等）。 */
 export const BRAND_TYPE_ALIASES = new Map<string, string>([["Arguments", "IArguments"]]);
 
@@ -48,6 +65,15 @@ export const BUILTIN_GENERIC_BRANDS = new Map<string, string>([
   ["AsyncIterableIterator", "AsyncIterableIterator<unknown>"],
 ]);
 
+export type DtsObjectSlot = {
+  key: string;
+  type: DtsType;
+  optional?: boolean;
+  readonly?: boolean;
+  /** `key` 是 `Symbol.x`（打印 `[Symbol.x]` 成员） */
+  symbol?: boolean;
+};
+
 export type DtsType =
   | { kind: "prim"; name: string }
   | { kind: "literal"; text: string }
@@ -63,12 +89,13 @@ export type DtsType =
     }
   | {
       kind: "object";
-      slots: Array<{ key: string; type: DtsType; optional?: boolean; readonly?: boolean }>;
+      slots: DtsObjectSlot[];
       /** 索引签名（`[key: K]: V`） */
       index?: { key: DtsType; value: DtsType };
       /** 零成员对象：closed ⇒ never；open ⇒ unknown */
       empty?: "never" | "unknown";
     }
+  | { kind: "intersection"; members: DtsType[] }
   | { kind: "generic"; name: string; args: DtsType[] }
   | { kind: "named"; text: string }
   | { kind: "template"; parts: Array<{ fixed?: string; type?: DtsType }> }
@@ -260,32 +287,46 @@ export function dtsTypeOfAbs(a: Abs, opts: DtsTypeOpts = {}): DtsType | undefine
       return { kind: "union", members };
     }
     case "obj": {
-      // 数组视图：仅支持「规范下标 + length」的纯数组面；带伴生槽
-      // （index/input/groups 等）时旧渲染器会发 tuple & object 交叉类型 ⇒ 回落。
+      const entries = Object.entries(a.shape.slots);
       if (a.shape.view !== undefined) {
         if (a.shape.view !== "array") return undefined;
-        const entries = Object.entries(a.shape.slots);
-        if (entries.some(([k]) => !CANONICAL_INDEX.test(k) && k !== "length")) return undefined;
         const idxs = entries
           .map(([k]) => k)
           .filter((k) => CANONICAL_INDEX.test(k))
           .map(Number)
           .sort((x, y) => x - y);
-        if (idxs.length === 0) return { kind: "array", element: { kind: "unknown" } };
-        const elements: DtsType[] = [];
-        for (let i = 0; i <= idxs[idxs.length - 1]!; i++) {
-          const slot = a.shape.slots[String(i)];
-          if (slot === undefined) {
-            elements.push({ kind: "literal", text: "undefined" });
-            continue;
+        let arrayPart: DtsType;
+        if (idxs.length === 0) {
+          arrayPart = { kind: "array", element: { kind: "unknown" } };
+        } else {
+          const elements: DtsType[] = [];
+          for (let i = 0; i <= idxs[idxs.length - 1]!; i++) {
+            const slot = a.shape.slots[String(i)];
+            if (slot === undefined) {
+              elements.push({ kind: "literal", text: "undefined" });
+              continue;
+            }
+            const t = dtsTypeOfAbs(slot.value, opts);
+            if (t === undefined || t.kind === "union" || t.kind === "fn") return undefined;
+            elements.push(t);
           }
-          const t = dtsTypeOfAbs(slot.value, opts);
-          if (t === undefined || t.kind === "union" || t.kind === "fn") return undefined;
-          elements.push(t);
+          arrayPart = { kind: "tuple", elements };
         }
-        return { kind: "tuple", elements };
+        const sideEntries = entries.filter(
+          ([k]) => !CANONICAL_INDEX.test(k) && k !== "length",
+        );
+        if (sideEntries.length === 0) return arrayPart;
+        const sideSlots: DtsObjectSlot[] = [];
+        for (const [k, slot] of sideEntries) {
+          const s = objectSlotOf(a, k, slot, opts);
+          if (s === undefined) return undefined;
+          sideSlots.push(s);
+        }
+        return {
+          kind: "intersection",
+          members: [arrayPart, { kind: "object", slots: sideSlots }],
+        };
       }
-      const entries = Object.entries(a.shape.slots);
       let index: { key: DtsType; value: DtsType } | undefined;
       if (a.shape.index !== undefined) {
         const key = dtsTypeOfAbs(a.shape.index.key, opts);
@@ -296,26 +337,11 @@ export function dtsTypeOfAbs(a: Abs, opts: DtsTypeOpts = {}): DtsType | undefine
       if (entries.length === 0 && index === undefined) {
         return { kind: "object", slots: [], empty: a.shape.open === true ? "unknown" : "never" };
       }
-      const slots: Array<{
-        key: string;
-        type: DtsType;
-        optional?: boolean;
-        readonly?: boolean;
-      }> = [];
+      const slots: DtsObjectSlot[] = [];
       for (const [k, slot] of entries) {
-        if (slot.symbolKey === true || isHiddenInternalSlot(k, slot)) return undefined;
-        if (lookupObjAccessor(a, k) !== undefined) return undefined;
-        // 对象方法可能叠加源码返回注解（applyObjectFnReturnOverride）⇒
-        // 独立 fn 类型支持不适用于对象槽，仍走旧渲染器。
-        if (slot.value.shape.k === "fn") return undefined;
-        const t = contractLiteralDtsType(slot.value) ?? dtsTypeOfAbs(slot.value, opts);
-        if (t === undefined) return undefined;
-        slots.push({
-          key: formatObjectKey(k),
-          type: t,
-          ...(slot.optional ? { optional: true } : {}),
-          ...(slot.readonly === true || opts.readonlyValues ? { readonly: true } : {}),
-        });
+        const s = objectSlotOf(a, k, slot, opts);
+        if (s === undefined) return undefined;
+        slots.push(s);
       }
       return { kind: "object", slots, ...(index ? { index } : {}) };
     }
@@ -339,7 +365,51 @@ function sanitizeFnParam(name: string, index: number): string {
   return isJsBindingIdent(base) ? `${base}${optional ? "?" : ""}` : `arg${index}`;
 }
 
-/** 契约字面量槽（`eq(self, lit(v))`）→ 字面量类型；非该形态 ⇒ undefined。 */
+/** 单个对象槽 → IR 槽；符号键 / 访问器 / 方法 / 内部槽不可表达 ⇒ undefined。 */
+function objectSlotOf(
+  a: Abs,
+  k: string,
+  slot: { value: Abs; optional?: boolean; readonly?: boolean; symbolKey?: boolean },
+  opts: DtsTypeOpts,
+): DtsObjectSlot | undefined {
+  const flags = {
+    ...(slot.optional ? { optional: true } : {}),
+    ...(slot.readonly === true || opts.readonlyValues ? { readonly: true } : {}),
+  };
+  if (slot.symbolKey === true) {
+    const sym = WELL_KNOWN_SYMBOLS.get(k);
+    if (sym === undefined) return undefined;
+    if (slot.value.shape.k === "fn") {
+      const ret = slot.value.shape.returnType
+        ? dtsTypeOfAbs(slot.value.shape.returnType, opts)
+        : undefined;
+      if (ret === undefined) return undefined;
+      return { key: sym, symbol: true, type: { kind: "fn", params: [], returnType: ret } };
+    }
+    const t = dtsTypeOfAbs(slot.value, opts);
+    return t === undefined ? undefined : { key: sym, symbol: true, type: t };
+  }
+  if (isHiddenInternalSlot(k, slot)) return undefined;
+
+  let source = slot.value;
+  if (slot.value.term !== undefined) {
+    const acc = lookupObjAccessor(a, k);
+    if (acc?.get) {
+      try {
+        source = acc.get(a);
+      } catch {
+        return { key: formatObjectKey(k), type: { kind: "unknown" }, ...flags };
+      }
+    }
+  }
+  // 对象方法可能叠加源码返回注解（applyObjectFnReturnOverride）⇒
+  // 独立 fn 类型支持不适用于对象槽，仍走旧渲染器。
+  if (source.shape.k === "fn") return undefined;
+  const t = contractLiteralDtsType(source) ?? dtsTypeOfAbs(source, opts);
+  return t === undefined ? undefined : { key: formatObjectKey(k), type: t, ...flags };
+}
+
+/** 契约字面量槽（`eq(self, lit(v))` / and / or）→ 字面量类型。 */
 function contractLiteralDtsType(a: Abs): DtsType | undefined {
   if (a.shape.k === "sum") {
     const members: DtsType[] = [];
@@ -350,16 +420,68 @@ function contractLiteralDtsType(a: Abs): DtsType | undefined {
     }
     return { kind: "union", members };
   }
-  if (a.term === undefined || a.pred?.op !== "eq") return undefined;
-  const { a: l, b: r } = a.pred;
-  const litTerm =
-    l.op === "lit" && termEquals(r, a.term)
-      ? l
-      : r.op === "lit" && termEquals(l, a.term)
-        ? r
-        : undefined;
-  if (!litTerm) return undefined;
-  return literalDtsType(litTerm.value);
+  if (a.term === undefined) return undefined;
+  const set = predLiteralValues(a.pred, a.term);
+  if (set === undefined || set.length === 0) {
+    if (a.term.op === "lit" && (a.term.value === null || a.term.value === undefined)) {
+      return literalDtsType(a.term.value);
+    }
+    return undefined;
+  }
+  const members: DtsType[] = [];
+  const seen = new Set<string>();
+  for (const v of set) {
+    const t = literalDtsType(v);
+    const key = renderDtsType(t);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    members.push(t);
+  }
+  return members.length === 1 ? members[0]! : { kind: "union", members };
+}
+
+/** pred → 字面量值集合（与 dts-generator 的 predLiteralSet 同口径）。 */
+function predLiteralValues(
+  p: Abs["pred"],
+  self: NonNullable<Abs["term"]>,
+): LiteralValue[] | undefined {
+  if (p === undefined) return undefined;
+  switch (p.op) {
+    case "eq": {
+      const { a: x, b: y } = p;
+      const litT =
+        x.op === "lit" && termEquals(y, self)
+          ? x
+          : y.op === "lit" && termEquals(x, self)
+            ? y
+            : undefined;
+      return litT === undefined ? undefined : [litT.value];
+    }
+    case "and": {
+      const found: LiteralValue[] = [];
+      for (const arg of p.args) {
+        if (arg.op !== "eq") continue;
+        const s = predLiteralValues(arg, self);
+        if (s === undefined) continue;
+        found.push(...s);
+      }
+      if (found.length === 0) return undefined;
+      const first = found[0]!;
+      if (!found.every((v) => Object.is(v, first))) return undefined;
+      return [first];
+    }
+    case "or": {
+      const out: LiteralValue[] = [];
+      for (const arg of p.args) {
+        const s = predLiteralValues(arg, self);
+        if (s === undefined) return undefined;
+        out.push(...s);
+      }
+      return out.length > 0 ? out : undefined;
+    }
+    default:
+      return undefined;
+  }
 }
 
 function literalDtsType(v: LiteralValue): DtsType {
@@ -427,6 +549,12 @@ export function renderDtsType(t: DtsType): string {
         return `Record<string, ${t.empty ?? "never"}>`;
       }
       const parts = t.slots.map((s) => {
+        if (s.symbol) {
+          if (s.type.kind === "fn") {
+            return `[${s.key}](): ${renderDtsType(s.type.returnType)}`;
+          }
+          return `[${s.key}]: ${renderDtsType(s.type)}`;
+        }
         const typ = renderDtsType(s.type);
         const value = s.optional && s.type.kind === "union" ? `(${typ})` : typ;
         return `${s.readonly ? "readonly " : ""}${s.key}${s.optional ? "?" : ""}: ${value}`;
@@ -436,6 +564,8 @@ export function renderDtsType(t: DtsType): string {
       }
       return `{ ${parts.join("; ")} }`;
     }
+    case "intersection":
+      return t.members.map(renderDtsType).join(" & ");
     case "template":
       return `\`${t.parts
         .map((p) => (p.fixed !== undefined ? p.fixed : `\${${renderDtsType(p.type!)}}`))

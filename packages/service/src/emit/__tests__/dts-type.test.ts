@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  $objAccessor,
   abs,
   anyAbs,
   boolLit,
@@ -148,19 +149,10 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
     expect(ir(tpl)).toBe(absToTSType(tpl));
   });
 
-  it("对象不支持的面：带伴生槽的 view / symbol / internal / fn 槽 ⇒ undefined", () => {
+  it("对象不支持的面：用户符号 / fn 槽 ⇒ undefined", () => {
     expect(
       dtsTypeOfAbs(
-        mk({
-          k: "obj",
-          slots: { "0": { value: num() }, index: { value: num() } },
-          view: "array",
-        } as never),
-      ),
-    ).toBeUndefined();
-    expect(
-      dtsTypeOfAbs(
-        mk({ k: "obj", slots: { "@@iterator": { value: num(), symbolKey: true } } } as never),
+        mk({ k: "obj", slots: { "@@sym#1": { value: num(), symbolKey: true } } } as never),
       ),
     ).toBeUndefined();
     expect(
@@ -275,6 +267,64 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
     expect(ir(promise)).toBe(absToTSType(promise));
     const thunk = mk({ k: "eff", eff: "unknown", inner: str() } as never);
     expect(ir(thunk)).toBe(absToTSType(thunk));
+  });
+
+  it("符号成员 / 访问器 / 数组视图伴生槽 / contract or", () => {
+    const iterFn = mk({
+      k: "fn",
+      params: [],
+      paramTypes: [],
+      returnType: num(),
+    } as never);
+    const symObj = mk({
+      k: "obj",
+      slots: {
+        "@@iterator": { value: iterFn, symbolKey: true },
+        "@@toStringTag": { value: str(), symbolKey: true },
+      },
+    } as never);
+    expect(ir(symObj)).toBe(absToTSType(symObj));
+
+    const placeholder = abs(
+      { k: "unknown" },
+      { op: "lit", value: undefined },
+      undefined,
+      "exact",
+    );
+    const accObj = $objAccessor(
+      mk({ k: "obj", slots: { x: { value: placeholder } } } as never),
+      "x",
+      () => num(),
+      null,
+    );
+    expect(ir(accObj)).toBe(absToTSType(accObj));
+
+    const view = mk({
+      k: "obj",
+      slots: {
+        "0": { value: numLit(1) },
+        length: { value: numLit(1) },
+        index: { value: numLit(0) },
+      },
+      view: "array",
+    } as never);
+    expect(ir(view)).toBe(absToTSType(view));
+
+    const self = { op: "var", id: "x" } as never;
+    const orSlot = abs(
+      { k: "prim", type: "string" },
+      self,
+      {
+        op: "or",
+        args: [
+          { op: "eq", a: self, b: { op: "lit", value: "a" } },
+          { op: "eq", a: self, b: { op: "lit", value: "b" } },
+        ],
+      } as never,
+      "path",
+    );
+    const orObj = mk({ k: "obj", slots: { k: { value: orSlot } } } as never);
+    expect(ir(orObj)).toBe(absToTSType(orObj));
   });
 
   it("不支持：类型变量 ⇒ undefined（回落旧渲染器）", () => {
