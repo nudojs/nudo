@@ -7,6 +7,7 @@
  */
 import { isRuntimeGlobalCtorName } from "./schema-generator.ts";
 import { tsAnnotationTypeText } from "../ts-annotation.ts";
+import { WELL_KNOWN_SYMBOLS } from "./dts-type.ts";
 import {
   TS_TYPE_TOKENS,
   annotationTypeRefs,
@@ -41,6 +42,23 @@ export function surfaceQualifiedName(n: SurfaceNode | undefined): string | undef
     return obj && prop ? `${obj}.${prop}` : undefined;
   }
   return surfaceName(n);
+}
+
+/**
+ * BUG-216 / BUG-236：计算键里的 **well-known symbol** → 引擎符号键名
+ * （`Symbol.iterator` → `"@@iterator"`）。
+ *
+ * `Symbol.iterator` 是静态 well-known 名字，不是动态键——TS 有 `[Symbol.x]`
+ * 成员语法，漏掉这类键等于把运行期真实存在的公开成员整条删掉。未登记的
+ * `Symbol.xxx`（用户符号）TS 没有对应语法 ⇒ 返回 undefined（不猜）。
+ */
+export function surfaceSymbolKeyName(n: SurfaceNode | undefined): string | undefined {
+  if (!n || n.type !== "MemberExpression" || n.computed === true) return undefined;
+  const obj = n.object as SurfaceNode | undefined;
+  const prop = surfaceName(n.property as SurfaceNode | undefined);
+  if (obj?.type !== "Identifier" || obj.name !== "Symbol" || prop === undefined) return undefined;
+  const engineKey = `@@${prop}`;
+  return WELL_KNOWN_SYMBOLS.has(engineKey) ? engineKey : undefined;
 }
 
 /** 源码片段（`keepTs` 的 AST 上类型注解仍在 ⇒ 直接切原文；越界 ⇒ undefined） */

@@ -62,8 +62,10 @@ import {
   surfaceName,
   surfaceQualifiedName,
   surfaceSlice,
+  surfaceSymbolKeyName,
   type SurfaceNode,
 } from "./dts-surface-utils.ts";
+import { enumConstValue, enumInitTextOfValue } from "./dts-surface-enum.ts";
 import {
   dtsIdentifier,
   formatPropKey,
@@ -341,14 +343,7 @@ const CANONICAL_INDEX = /^(?:0|[1-9]\d*)$/;
  * 成员语法，漏掉这类键等于把运行期真实存在的公开成员整条删掉。未登记的
  * `Symbol.xxx`（用户符号）TS 没有对应语法 ⇒ 返回 undefined（不猜）。
  */
-function surfaceSymbolKeyName(n: SurfaceNode | undefined): string | undefined {
-  if (!n || n.type !== "MemberExpression" || n.computed === true) return undefined;
-  const obj = n.object as SurfaceNode | undefined;
-  const prop = surfaceName(n.property as SurfaceNode | undefined);
-  if (obj?.type !== "Identifier" || obj.name !== "Symbol" || prop === undefined) return undefined;
-  const engineKey = `@@${prop}`;
-  return WELL_KNOWN_SYMBOLS.has(engineKey) ? engineKey : undefined;
-}
+
 
 /** case 在参数位 i 的 Abs */
 function caseArgAbs(c: CaseResult, i: number): Abs | undefined {
@@ -4182,93 +4177,10 @@ function scanClassSurface(
  *
  * 返回 `number | string`，由调用方渲染成 TS 字面量文本。
  */
-function enumConstValue(
-  node: SurfaceNode | undefined,
-  members: ReadonlyMap<string, number | string>,
-): number | string | undefined {
-  if (!node) return undefined;
-  switch (node.type) {
-    case "StringLiteral":
-      return typeof node.value === "string" ? node.value : undefined;
-    case "NumericLiteral":
-      return typeof node.value === "number" ? node.value : undefined;
-    case "Identifier":
-      // 同一 enum 内**已折出**的成员引用（`B = A + 1`）；外部绑定不猜。
-      return node.name === undefined ? undefined : members.get(String(node.name));
-    case "TemplateLiteral": {
-      const quasis = (node.quasis as SurfaceNode[] | undefined) ?? [];
-      const exprs = (node.expressions as SurfaceNode[] | undefined) ?? [];
-      let out = "";
-      for (let i = 0; i < quasis.length; i++) {
-        const cooked = (quasis[i]?.value as SurfaceNode | undefined)?.cooked;
-        if (typeof cooked !== "string") return undefined;
-        out += cooked;
-        const e = exprs[i];
-        if (e !== undefined) {
-          const v = enumConstValue(e, members);
-          if (v === undefined) return undefined;
-          out += String(v);
-        }
-      }
-      return out;
-    }
-    case "UnaryExpression": {
-      const arg = enumConstValue(node.argument as SurfaceNode | undefined, members);
-      if (typeof arg !== "number") return undefined;
-      if (node.operator === "-") return -arg;
-      if (node.operator === "+") return arg;
-      if (node.operator === "~") return ~arg;
-      return undefined;
-    }
-    case "ParenthesizedExpression":
-      return enumConstValue(node.expression as SurfaceNode | undefined, members);
-    case "BinaryExpression": {
-      const l = enumConstValue(node.left as SurfaceNode | undefined, members);
-      const r = enumConstValue(node.right as SurfaceNode | undefined, members);
-      if (l === undefined || r === undefined) return undefined;
-      const op = String(node.operator ?? "");
-      // `+` 是 enum 里唯一允许字符串的运算符（`"a" + "b"` / `"a" + 1`）
-      if (op === "+") {
-        if (typeof l === "string" || typeof r === "string") return String(l) + String(r);
-        return l + r;
-      }
-      if (typeof l !== "number" || typeof r !== "number") return undefined;
-      switch (op) {
-        case "-":
-          return l - r;
-        case "*":
-          return l * r;
-        case "/":
-          return l / r;
-        case "%":
-          return l % r;
-        case "**":
-          return l ** r;
-        case "<<":
-          return l << r;
-        case ">>":
-          return l >> r;
-        case ">>>":
-          return l >>> r;
-        case "&":
-          return l & r;
-        case "|":
-          return l | r;
-        case "^":
-          return l ^ r;
-        default:
-          return undefined;
-      }
-    }
-    default:
-      return undefined;
-  }
-}
+
 
 /** 折出的常量值 → enum 初始化器文本（`String(-0)` 与 tsc 一致为 `0`） */
-function enumInitTextOfValue(value: number | string): string {
-  return typeof value === "string" ? JSON.stringify(value) : String(value);
-}
+
 
 /**
  * 类字段公开类型 = **唯一优先级格**（ADR §4 D2）：声明 > 观测。
