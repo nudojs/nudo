@@ -170,12 +170,17 @@ describe("dts 类型 IR 快照", () => {
     ).toBe('[string, ...(["a"] & { index: 0 })[]]');
   });
 
-  it("无源码名的用户符号键被跳过（与旧渲染器同口径）", () => {
+  it("无源码名的用户符号键被跳过并进 dropped 台账", () => {
+    const dropped: Array<{ key: string; reason: string }> = [];
     expect(
-      ir(
-        mk({ k: "obj", slots: { "@@sym#1": { value: num(), symbolKey: true } } } as never),
+      renderDtsType(
+        dtsTypeOfAbs(
+          mk({ k: "obj", slots: { "@@sym#1": { value: num(), symbolKey: true } } } as never),
+          { onDrop: (d) => dropped.push(d) },
+        ),
       ),
     ).toBe("Record<string, never>");
+    expect(dropped).toEqual([{ key: "@@sym#1", reason: "unresolved-symbol" }]);
   });
 
   it("生成器 / 迭代器协议对象", () => {

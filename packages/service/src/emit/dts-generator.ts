@@ -43,6 +43,7 @@ import {
   WELL_KNOWN_SYMBOLS,
   dtsTypeOfAbs,
   renderDtsType,
+  type DtsDrop,
 } from "./dts-type.ts";
 import type {
   DtsClassAccessorSurface,
@@ -184,6 +185,7 @@ function absToTSTypeIr(a: Abs, typeVars?: Map<string, string>): string {
     ...(ctx.userSymbolKeys === undefined
       ? {}
       : { userSymbolKeys: [...ctx.userSymbolKeys] }),
+    ...(ctx.onDrop === undefined ? {} : { onDrop: ctx.onDrop }),
   });
   return renderDtsType(t);
 }
@@ -231,6 +233,7 @@ type DtsProjectionContext = {
   symbolReturnOverrides?: ReadonlyMap<string, string>;
   userSymbolKeys?: readonly string[];
   objectFnReturnOverrides?: ReadonlyMap<string, string>;
+  onDrop?: (drop: DtsDrop) => void;
 };
 
 let currentDtsContext: DtsProjectionContext = { readonlyValues: false };
@@ -244,6 +247,19 @@ function withDtsContext<T>(patch: Partial<DtsProjectionContext>, fn: () => T): T
   } finally {
     currentDtsContext = prev;
   }
+}
+
+function pushDrop(sink: DtsDrop[], drop: DtsDrop): void {
+  if (sink.some((d) => d.key === drop.key && d.reason === drop.reason)) return;
+  sink.push(drop);
+}
+
+/** 无法表达成员的可诊断台账（产物里是注释，不影响 TS 语法）。 */
+function dropLedgerLines(drops: readonly DtsDrop[]): string[] {
+  return drops.map(
+    (d) =>
+      `// nudo:dropped-type-member ${d.key} — symbol key has no source name (cannot be expressed in .d.ts)`,
+  );
 }
 
 /**
@@ -2891,8 +2907,13 @@ export function projectFunctionDts(
     // Bug 57：类型形参子句按普查名查（类成员 `C.m`，模块函数 `gen`）。
     typeParamKey: fn.name,
   };
-  const proj = withDtsContext({ brandScope: brandScopeOf(surface) }, () =>
-    projectFunctionDtsInner(fn, contract, ctx),
+  const drops: DtsDrop[] = [];
+  const proj = withDtsContext(
+    {
+      brandScope: brandScopeOf(surface),
+      onDrop: (drop) => pushDrop(drops, drop),
+    },
+    () => projectFunctionDtsInner(fn, contract, ctx),
   );
   // 「第三种」：声明 vs 观测，**只落台账、绝不覆盖产物**。手写契约覆盖返回位
   // 时跳过（那是第三来源，不参与「实现 vs 声明」的比较）；无 combinedAbs
@@ -2906,6 +2927,7 @@ export function projectFunctionDts(
   }
   const typeRefs = [...(ctx.typeRefs ?? [])];
   const ledger = [
+    ...dropLedgerLines(drops),
     ...(ctx.dropped ?? []).map(
       (n) =>
         `// nudo:dropped-type-annotation ${n} — type not declared in this module (falls back to the observed type)`,
@@ -6173,9 +6195,16 @@ export function projectModuleDts(
   extras?: DtsModuleExtras,
 ): DtsModuleProjection {
   // Bug 233：类字段声明（brand 实例形状）也要在 brand 解析口径内渲染。
-  return withDtsContext({ brandScope: brandScopeOf(surface) }, () =>
-    projectModuleDtsInner(surface, entries, extras),
+  const drops: DtsDrop[] = [];
+  const proj = withDtsContext(
+    {
+      brandScope: brandScopeOf(surface),
+      onDrop: (drop) => pushDrop(drops, drop),
+    },
+    () => projectModuleDtsInner(surface, entries, extras),
   );
+  if (drops.length === 0) return proj;
+  return { ...proj, lines: [...dropLedgerLines(drops), ...proj.lines] };
 }
 
 function projectModuleDtsInner(

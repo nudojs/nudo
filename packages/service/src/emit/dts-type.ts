@@ -131,6 +131,13 @@ export type DtsBrandScope = {
   requiredArgFillers: ReadonlyMap<string, readonly string[]>;
 };
 
+/** 投影面无法表达、但确实存在于源对象上的成员。 */
+export type DtsDrop = {
+  /** 运行时槽键（`@@sym#0` / `Symbol.iterator` 等） */
+  key: string;
+  reason: "unresolved-symbol";
+};
+
 export type DtsTypeOpts = {
   /** `as const` 通道下的值整体只读（与 dts 全局开关同口径） */
   readonlyValues?: boolean;
@@ -146,6 +153,8 @@ export type DtsTypeOpts = {
   symbolReturnOverrides?: ReadonlyMap<string, string>;
   /** 用户符号键的源码名队列（按出现序消费，`{ [tag]: 1 }` ⇒ `[tag]`） */
   userSymbolKeys?: string[];
+  /** 无法表达而丢弃的成员（符号键无源码名等）；调用方落台账。 */
+  onDrop?: (drop: DtsDrop) => void;
   /** @internal 环 / 深度预算（DESIGN-001） */
   budget?: ProjectionBudget;
 };
@@ -478,7 +487,10 @@ function objectSlotOf(
         ? undefined
         : opts.userSymbolKeys?.shift();
     const sym = WELL_KNOWN_SYMBOLS.get(k) ?? userKey;
-    if (sym === undefined) return null;
+    if (sym === undefined) {
+      opts.onDrop?.({ key: k, reason: "unresolved-symbol" });
+      return null;
+    }
     if (slot.value.shape.k === "fn") {
       const fromAbs = slot.value.shape.returnType
         ? dtsTypeOfAbs(slot.value.shape.returnType, opts)
