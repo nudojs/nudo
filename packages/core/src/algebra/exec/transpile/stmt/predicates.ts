@@ -10,8 +10,13 @@ export {
   stmtReturns,
   withImplicitReturn,
 } from "./predicates-control.ts";
-import { matchRelIdentLit, matchRelIdentLitComposite } from "../../../arithmetic.ts";
 import { parseSource } from "../../../parse-source.ts";
+import {
+  isStrictIllegalBinding,
+  narrowArmShadowWrap,
+  type ArmShadowBinding,
+} from "./narrow-arm.ts";
+export * from "./predicates-rel.ts";
 
 
 
@@ -64,12 +69,10 @@ import { parseSource } from "../../../parse-source.ts";
  * check 5.5x 回退）。此名面上影子包装整体跳过——与 fork 绑定集冲突跳过
  * 同一口径（宁缺毋假：窄化是精度增益，跳过只是少剪，语义不变）。
  */
-const STRICT_ILLEGAL_BINDINGS = new Set(["arguments", "eval"]);
+
 
 /** 守卫名是否不能作 strict 绑定名（守卫影子包装须跳过） */
-function isStrictIllegalBinding(name: string): boolean {
-  return STRICT_ILLEGAL_BINDINGS.has(name);
-}
+
 
 export type NullishGuard = {
   /** 被守卫的标识符 */
@@ -826,7 +829,7 @@ export function nullishRemoveCallOf(guard: NullishGuard): string {
 /** 臂窄化影子重绑的一个形参槽：name = 影子参数名（兼跳过检查的守卫名），
  *  arg = 重绑实参表达式（$removeNullish / $narrowTypeOf / $narrowMemberEq /
  *  $lit / $join / $refineRel 调用串，由各通道构造）。 */
-type ArmShadowBinding = { name: string; arg: string };
+
 
 /** 臂窄化影子重绑骨架（五联臂单源：nullish / typeof / 判别等值 / case
  *  标签 / 关系守卫共用）：任一影子名在 fork 绑定集（臂内写 / 快照重绑
@@ -840,25 +843,7 @@ type ArmShadowBinding = { name: string; arg: string };
  *    case 标签「排除在内、命中在外」与关系「主界在内、extra 界在外」的
  *    既有内外层序）。
  *  bindings 为空（无事实）时原样返回 thunk。 */
-function narrowArmShadowWrap(
-  thunk: string,
-  bindings: readonly ArmShadowBinding[],
-  forkBindingNames: ReadonlySet<string> | readonly string[],
-  mode: "multi" | "seq",
-): string {
-  if (bindings.length === 0) return thunk;
-  const names =
-    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
-  if (bindings.some((b) => names.has(b.name) || isStrictIllegalBinding(b.name))) return thunk;
-  if (mode === "seq") {
-    let out = thunk;
-    for (const b of bindings) out = `((${b.name}) => ${out})(${b.arg})`;
-    return out;
-  }
-  const params = bindings.map((b) => b.name).join(", ");
-  const args = bindings.map((b) => b.arg).join(", ");
-  return `((${params}) => ${thunk})(${args})`;
-}
+
 
 /** 守卫臂 thunk 的 nullish 剪影包装：`((p) => THUNK)($removeNullish(p))`。
  *  仅当守卫名不在 fork 绑定集（臂内无写/快照重绑）时应用——否则影子参数
@@ -1563,43 +1548,9 @@ export function narrowCaseLabelArmThunk(
  * `x + 0` 携带界而裸 `return x` 丢守卫事实 → return-constraint gate 假阳）。
  * 补集臂（¬x≥0）含 NaN 可能（NaN 与任何比较皆假），不可健全表示 → 不窄化。
  */
-export type RelGuard = {
-  /** 被守卫的标识符 */
-  name: string;
-  /** 关系（含翻转后的 `3 < x` → gt） */
-  op: "gt" | "ge" | "lt" | "le";
-  /** 字面量界 */
-  k: number;
-  /**
-   * **复合**关系式（合取 `x > 0 && x < 10`）派生的守卫（族 60 · 第 4 条）。
-   *
-   * 合取为真 ⇒ 每一合取项为真 ⇒ **事实臂**接守卫可靠；
-   * 但 `¬(A ∧ B)` = `¬A ∨ ¬B` **不是**单一关系 ⇒ **补集方向**
-   * （后续路径 / else 臂）**不可**用它 ⇒ 消费方
-   * （`narrowRelComplementArmThunk`）**必须**跳过 `composite: true` 的守卫，
-   * 否则会在「测试为假」的路径上断言 `¬A`（**假绿**）。
-   */
-  composite?: boolean;
-  /**
-   * 复合守卫的**其余**合取项界（**同名**变量；事实臂一并接上）。
-   * `x > 0 && x < 10` ⇒ 主界 `x > 0` + 其余界 `x < 10`
-   * （事实臂同时持有两个界 ⇒ 契约朝任一方向都能证得）。
-   */
-  extra?: Array<{ op: "gt" | "ge" | "lt" | "le"; k: number }>;
-  /**
-   * 复合守卫的其余合取项界（**异名**变量；只用于**事实臂**）。
-   * `x >= 1 && y >= 2` ⇒ 主守卫 `x` + `others: [{ name: "y", … }]`——
-   * 合取为真 ⇒ 每一项为真 ⇒ 事实臂同时持有全部名字的界（issue #185：
-   * 旧实现只留先到的一个名字 ⇒ `x + y` 只折一侧 ⇒ 合取守卫下的和契约
-   * 证不出）。补集方向与 `composite` 同禁（`¬(A ∧ B)` 不是单事实）。
-   */
-  others?: Array<{ name: string; op: "gt" | "ge" | "lt" | "le"; k: number }>;
-};
 
-export function relGuardOf(test: unknown): RelGuard | undefined {
-  // 单一关系式优先（行为逐字不变）；复合式（合取）才走复合匹配。
-  return matchRelIdentLit(test) ?? matchRelIdentLitComposite(test);
-}
+
+
 
 /**
  * 否定测试（`!(R…)`）的**否定臂**事实（issue #185）：`!(A ∧ …)` 为**假**
@@ -1611,54 +1562,22 @@ export function relGuardOf(test: unknown): RelGuard | undefined {
  * （else / early-return 后续路径 / `||` 右臂）——见
  * `narrowRelNegationArmThunk`。
  */
-export function relGuardOfNegation(test: unknown): RelGuard | undefined {
-  const t = test as { type?: string; operator?: string; argument?: unknown } | null | undefined;
-  if (t?.type !== "UnaryExpression" || t.operator !== "!" || t.argument == null) return undefined;
-  return relGuardOf(t.argument);
-}
+
 
 /** 关系守卫事实集 → 影子重绑槽（主界在内、其余界按序在外；seq 嵌套顺序
  *  与既有「主界最内」口径一致）。 */
-function relGuardBindings(guard: RelGuard): ArmShadowBinding[] {
-  const facts = [
-    { name: guard.name, op: guard.op, k: guard.k },
-    ...(guard.extra ?? []).map((b) => ({ name: guard.name, op: b.op, k: b.k })),
-    ...(guard.others ?? []),
-  ];
-  return facts.map((f) => ({
-    name: f.name,
-    arg: `$refineRel(${f.name}, ${JSON.stringify(f.op)}, ${f.k})`,
-  }));
-}
+
 
 /** 关系守卫臂 thunk 的剪影包装：`((x) => THUNK)($refineRel(x, "ge", 0))`——
  *  仅事实臂；守卫名在 fork 绑定集（臂内写/快照重绑）时跳过（与 nullish/
  *  typeof/判别剪影同一跳过口径，宁缺毋假：影子参数会吞掉臂内写）。 */
-export function narrowRelArmThunk(
-  thunk: string,
-  guard: RelGuard | undefined,
-  arm: "cons" | "alt",
-  forkBindingNames: ReadonlySet<string> | readonly string[],
-): string {
-  if (!guard || arm !== "cons") return thunk;
-  // 复合守卫（合取）的**其余**合取项界一并接上（同名 + 异名）——
-  // 合取为真 ⇒ 每一合取项为真 ⇒ 事实臂同时持有全部界
-  // （只接一个界会在契约朝**另一**方向时把「证不出」变成「证反了」⇒ 假红）。
-  return narrowArmShadowWrap(thunk, relGuardBindings(guard), forkBindingNames, "seq");
-}
+
 
 /** **否定臂**关系剪影（`relGuardOfNegation` 派生的事实集，issue #185）：
  *  只用于测试为假的臂（else / early-return 后续路径 / `||` 右臂）——
  *  `!(A ∧ …)` 为假 ⇒ 每个关系合取项为真，断言健全（见
  *  `relGuardOfNegation`）。不可拿来处理裸关系守卫的补集（NaN 面）。 */
-export function narrowRelNegationArmThunk(
-  thunk: string,
-  guard: RelGuard | undefined,
-  forkBindingNames: ReadonlySet<string> | readonly string[],
-): string {
-  if (!guard) return thunk;
-  return narrowArmShadowWrap(thunk, relGuardBindings(guard), forkBindingNames, "seq");
-}
+
 
 /**
  * 关系守卫**补集**臂的事实集（issue #185 + 契约 `number().finite()`）。
@@ -1671,28 +1590,10 @@ export function narrowRelNegationArmThunk(
  * 这里只收集候选事实；是否真正收紧由运行时 `$refineRelComplement` 按
  * `isNonNaN` 判定（缺证据原样返回，Bug 1115 的假绿红线不变）。
  */
-export function relGuardComplementFactsOf(test: unknown): RelGuard[] {
-  const single = matchRelIdentLit(test);
-  if (single) return [single];
-  return flattenBareRelDisjuncts(test) ?? [];
-}
+
 
 /** `||` 链上的裸关系析取项；任一项不是单关系（合取 / 别的表达式）⇒ 放弃整条 */
-function flattenBareRelDisjuncts(test: unknown): RelGuard[] | undefined {
-  const t = test as
-    | { type?: string; operator?: string; left?: unknown; right?: unknown }
-    | null
-    | undefined;
-  if (t?.type === "LogicalExpression" && t.operator === "||") {
-    const left = flattenBareRelDisjuncts(t.left);
-    if (!left) return undefined;
-    const right = flattenBareRelDisjuncts(t.right);
-    if (!right) return undefined;
-    return [...left, ...right];
-  }
-  const g = matchRelIdentLit(test);
-  return g ? [g] : undefined;
-}
+
 
 /**
  * 关系守卫**补集**臂剪影（issue #185 + 契约 `number().finite()`）：
@@ -1703,23 +1604,7 @@ function flattenBareRelDisjuncts(test: unknown): RelGuard[] | undefined {
  * `isNonNaN` 判定（拿不到 Abs 的语法层不得自行决定，缺证据即原样返回）。
  * 合取守卫不在内（`¬(A ∧ B)` 是析取，不是单一事实）。
  */
-export function narrowRelComplementArmThunk(
-  thunk: string,
-  guards: readonly RelGuard[] | undefined,
-  forkBindingNames: ReadonlySet<string> | readonly string[],
-): string {
-  const facts = (guards ?? []).filter((g) => !g.composite);
-  if (facts.length === 0) return thunk;
-  return narrowArmShadowWrap(
-    thunk,
-    facts.map((g) => ({
-      name: g.name,
-      arg: `$refineRelComplement(${g.name}, ${JSON.stringify(g.op)}, ${g.k})`,
-    })),
-    forkBindingNames,
-    "seq",
-  );
-}
+
 
 // --- NaN 守卫（issue #185 残余） ------------------------------------------
 
@@ -1736,104 +1621,13 @@ export function narrowRelComplementArmThunk(
  * **不识别**：truthy 不保证 `x` 自身是 NaN。补集侧只加 `ne(x, NaN)`，
  * 因此只消费「非 NaN」那一臂；NaN 那一臂保持不剪影（宁缺毋假）。
  */
-export type NanGuard = {
-  name: string;
-  truthyMeansNaN: boolean;
-  /**
-   * 单边事实：只有「测试为真」一侧蕴含非 NaN（`Number.isFinite(x)`）；
-   * 假侧不蕴含 NaN（`"abc"` 也不 finite）⇒ **禁止**布尔取反后复用，
-   * 也禁止用于 NaN 臂。
-   */
-  oneSided?: boolean;
-};
 
-export function nanGuardOf(
-  test: unknown,
-  shadowed?: ReadonlySet<string>,
-  aliases?: ReadonlyMap<string, NanGuard>,
-): NanGuard | undefined {
-  // 用户遮蔽了 `Number`（形参 / 声明 / mock 注入）⇒ `Number.isNaN` 不是内建，
-  // 不得产出 `ne(x, NaN)` 事实（fail-closed）。
-  if (shadowed?.has("Number")) return undefined;
-  const t = test as
-    | {
-        type?: string;
-        name?: string;
-        operator?: string;
-        argument?: unknown;
-        callee?: {
-          type?: string;
-          computed?: boolean;
-          object?: { type?: string; name?: string };
-          property?: { type?: string; name?: string };
-        };
-        arguments?: unknown[];
-        left?: { type?: string; name?: string };
-        right?: { type?: string; name?: string };
-      }
-    | null
-    | undefined;
-  if (t?.type === "Identifier" && typeof t.name === "string") {
-    const alias = aliases?.get(t.name);
-    return alias ? { ...alias } : undefined;
-  }
-  if (t?.type === "UnaryExpression" && t.operator === "!" && t.argument != null) {
-    const inner = nanGuardOf(t.argument, shadowed, aliases);
-    // 单边事实不可取反（`!Number.isFinite(x)` 假侧不蕴含 NaN）
-    if (!inner || inner.oneSided) return undefined;
-    return { name: inner.name, truthyMeansNaN: !inner.truthyMeansNaN };
-  }
-  if (
-    t?.type === "CallExpression" &&
-    t.callee?.type === "MemberExpression" &&
-    !t.callee.computed &&
-    t.callee.object?.type === "Identifier" &&
-    t.callee.object.name === "Number" &&
-    t.callee.property?.type === "Identifier" &&
-    (t.callee.property.name === "isNaN" || t.callee.property.name === "isFinite") &&
-    t.arguments?.length === 1 &&
-    (t.arguments[0] as { type?: string; name?: string } | undefined)?.type ===
-      "Identifier" &&
-    typeof (t.arguments[0] as { name?: string }).name === "string"
-  ) {
-    const name = (t.arguments[0] as { name: string }).name;
-    // isFinite 为真 ⇒ 有限数 ⇒ 非 NaN；为假 ⇒ 非有限（含非数字）**不**蕴含 NaN。
-    if (t.callee.property.name === "isFinite") {
-      return { name, truthyMeansNaN: false, oneSided: true };
-    }
-    return { name, truthyMeansNaN: true };
-  }
-  if (
-    t?.type === "BinaryExpression" &&
-    (t.operator === "!==" || t.operator === "===") &&
-    t.left?.type === "Identifier" &&
-    t.right?.type === "Identifier" &&
-    typeof t.left.name === "string" &&
-    t.left.name === t.right.name
-  ) {
-    return { name: t.left.name!, truthyMeansNaN: t.operator === "!==" };
-  }
-  return undefined;
-}
+
+
 
 /**
  * NaN 守卫的**非 NaN 臂**剪影：`Number.isNaN(x) === false` / `x === x` 成立
  * ⇒ `$refineNotNaN(x)`（挂 `ne(x, NaN)`），供关系补集与内建判定采信。
  * 另一臂（x 确为 NaN）不剪影——`$refineNotNaN` 没有对偶事实。
  */
-export function narrowNotNaNArmThunk(
-  thunk: string,
-  guard: NanGuard | undefined,
-  arm: "cons" | "alt",
-  forkBindingNames: ReadonlySet<string> | readonly string[],
-): string {
-  if (!guard) return thunk;
-  const notNanArm = guard.truthyMeansNaN ? "alt" : "cons";
-  if (arm !== notNanArm) return thunk;
-  return narrowArmShadowWrap(
-    thunk,
-    [{ name: guard.name, arg: `$refineNotNaN(${guard.name})` }],
-    forkBindingNames,
-    "seq",
-  );
-}
+
