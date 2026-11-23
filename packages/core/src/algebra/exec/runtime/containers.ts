@@ -54,13 +54,12 @@ export {
   $len,
 } from "./containers/arr-index.ts";
 export {
-  $arrRest,
-  $concat,
   $yieldStarElems,
   $tpl,
   $forInKeys,
   $collectionForEach,
 } from "./containers/iterate.ts";
+export { $arrRest, $concat } from "./containers/spread-rest.ts";
 export {
   NAMESPACE_GLOBALS,
   namespaceNameOf,
