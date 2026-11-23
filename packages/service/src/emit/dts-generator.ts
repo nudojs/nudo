@@ -71,6 +71,7 @@ import {
   overloadExportGlue,
   type DtsExportForm,
 } from "./dts-module-emit.ts";
+import { dtsValueDeclarations } from "./dts-value-emit.ts";
 import type {
   DtsClassAccessorSurface,
   DtsClassFieldSurface,
@@ -6184,6 +6185,13 @@ function projectModuleDtsInner(
       annotationRefs,
       annotatedConstLocals,
       analyzedMemberReturns,
+      {
+        absToType: absToTSTypeIr,
+        widen: widenModuleValueAbs,
+        overlayAnnotations: overlayObjectFnAnnotations,
+        safeAnnotation: safeValueAnnotation,
+        withContext: withDtsContext,
+      },
     ),
   );
 
@@ -6621,157 +6629,6 @@ function overlayObjectFnAnnotations(
     changed = true;
   }
   return changed ? { ...a, shape: { ...a.shape, slots } } : a;
-}
-
-/**
- * 模块级值声明（BUG-190）：`export const/let/var` 与 TS `enum`。
- *
- * 只有**导出面**上的值声明落地（`dtsExportNamesOf` 非空）；类型取自分析面的
- * 绑定 Abs（顶层字面量 widen 到基类型——声明面是取值面，不是 case 台账）；
- * 拿不到绑定 ⇒ `unknown` + 产物内台账（可诊断，不静默）。
- */
-function dtsValueDeclarations(
-  surface: DtsModuleSurface | undefined,
-  values: ReadonlyMap<string, Abs> | undefined,
-  declaredLocals: ReadonlySet<string>,
-  annotationRefs?: Set<string>,
-  /**
-   * BUG-231：这些本地名虽被分析成函数，但声明器带可解析类型注解
-   * （`export const cb: Fn = (a) => …`）⇒ 由本通道发 `declare const cb: Fn`，
-   * 不得按函数处理的「已声明」跳过。
-   */
-  annotatedFunctionLocals: ReadonlySet<string> = new Set<string>(),
-  /** BUG-381：对象成员函数的分析返回 Abs（成员名 → 返回域）。 */
-  analyzedMemberReturns: ReadonlyMap<string, Abs> = new Map<string, Abs>(),
-): string[] {
-  if (!surface) return [];
-  const out: string[] = [];
-  for (const [local, value] of surface.values) {
-    const names = dtsExportNamesOf(surface, local);
-    const primary = names[0];
-    if (primary === undefined) continue; // 未导出 ⇒ 不在公开面
-    // 已被模块级函数声明占用（`export const f = () => …` 被分析成函数）⇒
-    // 再发一条值声明会产出 TS2300（Duplicate identifier）。BUG-231 的例外：
-    // 声明器注解可解析 ⇒ 函数声明已被抑制，值声明才是正确形态。
-    if (
-      declaredLocals.has(local) &&
-      !annotatedFunctionLocals.has(local) &&
-      value.nonFunctionValue !== true
-    ) {
-      continue;
-    }
-    if (surface.classes.has(local)) continue;
-    const abs = values?.get(local);
-    let decl: string;
-    if (value.kind === "enum") {
-      // 成员带上**字面量**初始化器（字符串 enum 的成员类型是字面量类型：
-      // 丢掉 `= "a"` 会把它变成数值 enum ⇒ 消费端的 `Mode.A` 类型语义反转）。
-      const body = (value.enumMembers ?? [])
-        .map(
-          (m) =>
-            `  ${isJsBindingIdent(m.name) ? m.name : JSON.stringify(m.name)}${
-              m.init !== undefined ? ` = ${m.init}` : ""
-            },`,
-        )
-        .join("\n");
-      // Bug 25：`export const enum` ⇒ `declare const enum`（与 tsc
-      // `--declaration` 同形；否则消费端生成运行时 import、运行时 SyntaxError）。
-      const constKw = value.constEnum ? "const " : "";
-      decl = `declare ${constKw}enum ${local} {${body ? `\n${body}\n` : ""}}`;
-    } else {
-      // BUG-130：源码注解优先于观测（`export let l: number` 没有初始化器，
-      // 注解是唯一类型来源）；引用不可解析名 ⇒ 不采用并落台账。
-      const ann = value.annotation
-        ? safeValueAnnotation(value.annotation, surface, annotationRefs)
-        : undefined;
-      if (ann?.unresolved !== undefined) {
-        out.push(
-          `// nudo:dropped-type-annotation ${local}: ${ann.unresolved} — type not declared in this module (falls back to the observed type)`,
-        );
-      }
-      // BUG-254 / BUG-258：初始化器 AST 里 Abs 表达不了的声明事实优先
-      // （`typeof target` / `new Map<string, number>()` 的显式实参）。
-      const initText = value.initTypeText;
-      const astPreferred =
-        initText !== undefined &&
-        (initText.includes("typeof ") ||
-          /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*<[\s\S]+>$/.test(initText));
-      // BUG-264：`const s = Symbol("s")` ⇒ `unique symbol`（显式 `: symbol`
-      // 注解已在上面优先）。
-      const uniqueSymbolText = value.uniqueSymbol === true ? "unique symbol" : undefined;
-      // BUG-140：初始化器内部的 `as const`（外层可变、内层冻结）。
-      const declaredText =
-        ann?.text ??
-        value.nestedConstType ??
-        uniqueSymbolText ??
-        (astPreferred ? initText : undefined);
-      if (abs === undefined && value.typeText === undefined && declaredText === undefined) {
-        out.push(
-          `// nudo:unresolved-value ${local} — no analysis binding (projected as unknown)`,
-        );
-      }
-      // Bug 72：可变容器递归拓宽（对象槽 / 数组元素到基类型）。
-      // Bug 77：`as const` 是**冻结**声明——字面量类型必须保留（否则
-      // `{ readonly host: "h" }` 被拓宽成 `readonly host: string`，把 as const
-      // 的字面量精度也丢了）⇒ 只走既有的顶层 widen + readonly 渲染。
-      //
-      // BUG-157：对象字面量成员函数的形参 / 返回注解叠加进 Abs（只补缺）。
-      const withMemberAnnotations = (a: Abs): Abs =>
-        overlayObjectFnAnnotations(
-          a,
-          value.fnMemberAnnotations,
-          surface,
-          annotationRefs,
-          analyzedMemberReturns,
-        );
-      // BUG-236：symbol 方法的返回注解走上下文旁路
-      const symbolReturns = new Map<string, string>();
-      // BUG-271：普通对象方法的返回注解（`Promise<number>` / 具名别名 /
-      // `string | null`）不能经 Shape 闸门——源码注解直接覆盖返回位文本。
-      const objectReturns = new Map<string, string>();
-      for (const ann of value.fnMemberAnnotations ?? []) {
-        if (ann.returnType === undefined) continue;
-        const safe = safeValueAnnotation(ann.returnType, surface, annotationRefs);
-        if (safe.text === undefined) continue;
-        if (ann.key.startsWith("@@")) symbolReturns.set(ann.key, safe.text);
-        else objectReturns.set(ann.key, safe.text);
-      }
-      // BUG-260：`const` 不参与顶层字面量拓宽（tsc 对 `const c = "abc"` 保留
-      // `"abc"`）；`let` / `var` 仍拓宽。`as const` 完全不拓宽（冻结声明）。
-      const renderAbs = (): string => {
-        if (!abs) return value.typeText ?? "unknown";
-        const annotated = withMemberAnnotations(abs);
-        if (value.asConst) return absToTSTypeIr(annotated);
-        if (value.literalConst === true && annotated.shape.k === "prim" && annotated.term?.op === "lit") {
-          return absToTSTypeIr(annotated);
-        }
-        return absToTSTypeIr(widenModuleValueAbs(annotated));
-      };
-      const render = (): string =>
-        withDtsContext(
-          {
-            ...(value.userSymbolKeys
-              ? { userSymbolKeys: [...value.userSymbolKeys] }
-              : {}),
-            ...(objectReturns.size > 0 ? { objectFnReturnOverrides: objectReturns } : {}),
-            ...(symbolReturns.size > 0 ? { symbolReturnOverrides: symbolReturns } : {}),
-          },
-          renderAbs,
-        );
-      const typeText =
-        declaredText ?? (value.asConst ? withDtsContext({ readonlyValues: true }, render) : render());
-      decl = `declare ${value.kind} ${local}: ${typeText};`;
-    }
-    if (primary === local) {
-      out.push(`export ${decl}`);
-      out.push(...names.slice(1).map((n) => `export { ${local} as ${exportNameRepr(n)} };`));
-      continue;
-    }
-    out.push(decl);
-    out.push(`export { ${local} as ${exportNameRepr(primary)} };`);
-    out.push(...names.slice(1).map((n) => `export { ${local} as ${exportNameRepr(n)} };`));
-  }
-  return out;
 }
 
 /** brand 实例形状 → 字段声明（排除方法名——方法进类体，不进字段） */

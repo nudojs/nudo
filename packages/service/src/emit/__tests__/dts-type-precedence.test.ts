@@ -5,7 +5,12 @@
 import { describe, it, expect } from "vitest";
 import { abs, joinAbs, num, numLit, str, strLit, type Abs } from "@nudojs/core";
 import { createTemplateAbs } from "@nudojs/core/internal";
-import { dtsTypeOfAbs, renderDtsType, type DtsTypeOpts } from "../dts-type.ts";
+import {
+  dtsTypeOfAbs,
+  renderDtsType,
+  type DtsType,
+  type DtsTypeOpts,
+} from "../dts-type.ts";
 import { tscNoEmitSingle } from "./dts-tsc.ts";
 
 const mk = (shape: Abs["shape"]): Abs => abs(shape, undefined, undefined, "exact");
@@ -26,9 +31,9 @@ const view = (): Abs =>
 const render = (a: Abs, opts: DtsTypeOpts = {}): string =>
   renderDtsType(dtsTypeOfAbs(a, opts));
 
-function expectValidType(text: string): void {
+function expectValidType(text: string, label?: string): void {
   const check = tscNoEmitSingle(`export type T = ${text};`, "precedence.ts");
-  expect(check.ok, check.stderr).toBe(true);
+  expect(check.ok, `${label ?? text}\n${check.stderr}`).toBe(true);
 }
 
 describe("dts 类型 IR 优先级矩阵", () => {
@@ -146,6 +151,141 @@ describe("dts 类型 IR 优先级矩阵", () => {
         returnType: { kind: "annotated", text: "string | null" },
       }),
     ).toBe("(x: number) => string | null");
+  });
+
+  it("所有节点类别在嵌套位置都能被 tsc 解析", () => {
+    const atoms: Array<[string, DtsType]> = [
+      ["prim", { kind: "prim", name: "number" }],
+      ["literal", { kind: "literal", text: '"a"' }],
+      ["never", { kind: "never" }],
+      ["unknown", { kind: "unknown" }],
+      ["array", { kind: "array", element: { kind: "prim", name: "number" } }],
+      [
+        "tuple",
+        { kind: "tuple", elements: [{ kind: "prim", name: "number" }] },
+      ],
+      [
+        "union",
+        {
+          kind: "union",
+          members: [
+            { kind: "prim", name: "number" },
+            { kind: "prim", name: "string" },
+          ],
+        },
+      ],
+      [
+        "intersection",
+        {
+          kind: "intersection",
+          members: [
+            { kind: "prim", name: "number" },
+            { kind: "object", slots: [] },
+          ],
+        },
+      ],
+      [
+        "object",
+        {
+          kind: "object",
+          slots: [{ key: "v", type: { kind: "prim", name: "number" } }],
+        },
+      ],
+      [
+        "generic",
+        { kind: "generic", name: "Array", args: [{ kind: "prim", name: "number" }] },
+      ],
+      ["named", { kind: "named", text: "Date" }],
+      ["annotated", { kind: "annotated", text: "string" }],
+      ["truncated", { kind: "truncated", reason: "cycle" }],
+      [
+        "group",
+        {
+          kind: "group",
+          inner: {
+            kind: "union",
+            members: [
+              { kind: "prim", name: "number" },
+              { kind: "prim", name: "string" },
+            ],
+          },
+        },
+      ],
+      [
+        "template",
+        {
+          kind: "template",
+          parts: [{ fixed: "id-" }, { type: { kind: "prim", name: "number" } }],
+        },
+      ],
+      [
+        "fn",
+        {
+          kind: "fn",
+          params: [{ name: "x", type: { kind: "prim", name: "number" } }],
+          returnType: { kind: "prim", name: "string" },
+        },
+      ],
+      [
+        "overloads",
+        {
+          kind: "overloads",
+          arms: [
+            {
+              paramTypes: [{ kind: "prim", name: "number" }],
+              returnType: { kind: "prim", name: "string" },
+            },
+          ],
+        },
+      ],
+    ];
+    const contexts: Array<[string, (t: DtsType) => DtsType]> = [
+      ["direct", (t) => t],
+      ["array", (t) => ({ kind: "array", element: t })],
+      ["tuple", (t) => ({ kind: "tuple", elements: [t] })],
+      [
+        "rest",
+        (t) => ({ kind: "tuple", elements: [{ kind: "prim", name: "number" }], rest: t }),
+      ],
+      ["union", (t) => ({ kind: "union", members: [t, { kind: "never" }] })],
+      [
+        "intersection",
+        (t) => ({ kind: "intersection", members: [t, { kind: "object", slots: [] }] }),
+      ],
+      [
+        "optional",
+        (t) => ({
+          kind: "object",
+          slots: [{ key: "v", type: t, optional: true }],
+        }),
+      ],
+      [
+        "generic",
+        (t) => ({ kind: "generic", name: "Array", args: [t] }),
+      ],
+      [
+        "fn-param",
+        (t) => ({
+          kind: "fn",
+          params: [{ name: "x", type: t }],
+          returnType: { kind: "prim", name: "string" },
+        }),
+      ],
+      [
+        "fn-return",
+        (t) => ({
+          kind: "fn",
+          params: [],
+          returnType: t,
+        }),
+      ],
+    ];
+    for (const [name, atom] of atoms) {
+      for (const [ctx, wrap] of contexts) {
+        const text = renderDtsType(wrap(atom));
+        expectValidType(text, `${name} in ${ctx}`);
+      }
+    }
   });
 
   it("generic / template / 截断标记仍是合法类型", () => {
