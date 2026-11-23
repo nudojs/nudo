@@ -5,6 +5,7 @@
  * 注入，避免组装层反向依赖 generator 的投影上下文。
  */
 import type { Abs } from "@nudojs/core";
+import { abs as makeAbs, lookupObjAccessor } from "@nudojs/core";
 import { isJsBindingIdent } from "@nudojs/core/internal";
 import type { FunctionAnalysis } from "../analyzer.ts";
 import { isRuntimeGlobalCtorName } from "./schema-generator.ts";
@@ -26,29 +27,21 @@ import {
   isTypeNameResolvable,
 } from "./dts-annotation-text.ts";
 import { safeValueAnnotation } from "./dts-surface-utils.ts";
-import { dtsIdentifier } from "./dts-text.ts";
-import type { DtsClassFieldSurface, DtsModuleSurface } from "./dts-ir.ts";
+import { dtsIdentifier, isArrayTypeText } from "./dts-text.ts";
+import { isHiddenInternalSlot } from "./internal-slot.ts";
+import { slotAbsOf, widenModuleValueAbs, widenParamAbs } from "./dts-widen.ts";
+import { tsAnnotationShape } from "../ts-annotation.ts";
+import type {
+  DtsClassFieldSurface,
+  DtsModuleSurface,
+  DtsObjectFnAnnotation,
+} from "./dts-ir.ts";
 import type {
   DtsContractFace,
   DtsFunctionProjection,
   DtsModuleExtras,
   DtsModuleProjection,
 } from "./dts-generator.ts";
-
-export type DtsAssemblyDeps = {
-  widenValue: (a: Abs) => Abs;
-  brandFields: (
-    brand: Abs | undefined,
-    methodNames: Set<string>,
-  ) => Array<{ name: string; type: string }>;
-  overlayAnnotations: (
-    a: Abs,
-    annotations: readonly import("./dts-ir.ts").DtsObjectFnAnnotation[] | undefined,
-    surface: DtsModuleSurface,
-    refs?: Set<string>,
-    analyzedReturns?: ReadonlyMap<string, Abs>,
-  ) => Abs;
-};
 
 export function projectModuleDtsInner(
   surface: DtsModuleSurface | undefined,
@@ -58,7 +51,6 @@ export function projectModuleDtsInner(
     contract?: DtsContractFace;
   }>,
   extras: DtsModuleExtras | undefined,
-  deps: DtsAssemblyDeps,
 ): DtsModuleProjection {
   const values = extras?.values;
   const lines: string[] = [];
@@ -197,7 +189,7 @@ export function projectModuleDtsInner(
       out.push(f);
     }
     // brand 兜底（分析面观测到的、源码声明面没有的槽）
-    for (const f of deps.brandFields(brands.get(className), memberNames)) {
+    for (const f of brandFieldLines(brands.get(className), memberNames)) {
       if (seen.has(f.name)) continue;
       seen.add(f.name);
       out.push(f);
@@ -320,8 +312,8 @@ export function projectModuleDtsInner(
       analyzedMemberReturns,
       {
         absToType: absToTSTypeIr,
-        widen: deps.widenValue,
-        overlayAnnotations: deps.overlayAnnotations,
+        widen: widenModuleValueAbs,
+        overlayAnnotations: overlayObjectFnAnnotations,
         safeAnnotation: safeValueAnnotation,
         withContext: withDtsContext,
       },
@@ -631,3 +623,140 @@ function collectBrandAbs(
     visit(contract.return);
   }
 }
+
+function overlayObjectFnAnnotations(
+  a: Abs,
+  annotations: readonly DtsObjectFnAnnotation[] | undefined,
+  surface: DtsModuleSurface,
+  refs?: Set<string>,
+  analyzedReturns?: ReadonlyMap<string, Abs>,
+): Abs {
+  // BUG-256：即使没有任何函数注解，也要走访问器实体化（getter-only 的
+  // `readonly` 是访问器表的事实，与注解无关）。
+  if (a.shape.k !== "obj") return a;
+  const slots: Record<string, (typeof a.shape.slots)[string]> = { ...a.shape.slots };
+  // BUG-235：本函数会造**新 Abs 身份**，而访问器侧表按对象身份键控 ⇒ 新对象
+  // 再也查不到 getter，下游 `slotAbsOf` 落回 `$lit(void 0)` 占位槽，把 getter
+  // 读域发布成 exact `undefined`（`{ m(a: number): string; g: undefined }`）。
+  // 侧表无法整体迁移（`migrateAccessors` 不在公共面），但投影只需要读域 ⇒
+  // 在造新对象前把它**实体化**进槽值。
+  //
+  // BUG-233 / BUG-256：getter-only（有 get 无 set）在 TS 里是**只读**属性，
+  // 这里把该事实落成槽标记（下游 widen 透传、渲染发 `readonly`）——新对象
+  // 没有侧表，晚一步就再也查不到。旧实现只在「有返回注解」时落标记，且第一段
+  // 的改动因 `changed` 未置位被整体丢弃（`gAnnot` / `gPlain` 都发可写）。
+  //
+  // BUG-270：setter-only 的属性类型是 **setter 形参类型**（TS 语义），不是
+  // 占位槽的 `undefined`。参数注解在 `objectFnMemberAnnotations` 里已采集。
+  let changed = false;
+  for (const [k, slot] of Object.entries(slots)) {
+    const acc = lookupObjAccessor(a, k);
+    if (acc === undefined) continue;
+    if (acc.get === undefined) {
+      const ann = (annotations ?? []).find((a) => a.key === k);
+      const paramText = ann?.paramTypes[0];
+      if (paramText !== undefined && safeValueAnnotation(paramText, surface, refs).unresolved === undefined) {
+        const shape = tsAnnotationShape(paramText);
+        if (shape) {
+          slots[k] = { ...slot, value: makeAbs(shape, undefined, undefined, "path") };
+          changed = true;
+        }
+      }
+      continue;
+    }
+    const read = slotAbsOf(a, k, slot.value);
+    const readonly = acc.set === undefined;
+    if (read !== slot.value || (readonly && slot.readonly !== true)) {
+      slots[k] = {
+        ...slot,
+        ...(read !== slot.value ? { value: read } : {}),
+        ...(readonly ? { readonly: true } : {}),
+      };
+      changed = true;
+    }
+  }
+  // BUG-381：无注解的成员也要用**分析返回**（成员自己的 fn 条目）补返回位，
+  // 不能只依赖 `fnMemberAnnotations`（对象属性箭头没有 AST 成员注解条目）。
+  for (const [member, ret] of analyzedReturns ?? []) {
+    const slot = slots[member];
+    if (!slot || slot.value.shape.k !== "fn" || slot.value.shape.returnType !== undefined) continue;
+    slots[member] = {
+      ...slot,
+      value: { ...slot.value, shape: { ...slot.value.shape, returnType: ret } },
+    };
+    changed = true;
+  }
+  for (const ann of annotations ?? []) {
+    const slot = slots[ann.key];
+    if (!slot) continue;
+    const fn = slot.value;
+    if (fn.shape.k !== "fn") continue;
+    const paramTypes = [...(fn.shape.paramTypes ?? [])];
+    let fnChanged = false;
+    ann.paramTypes.forEach((text, i) => {
+      if (paramTypes[i] !== undefined || text === undefined) return;
+      // rest 位必须是数组类型（与 `tsParamAnnotation` 同一判据）
+      if (ann.rest[i] === true && !isArrayTypeText(text)) return;
+      if (safeValueAnnotation(text, surface, refs).unresolved !== undefined) return;
+      const shape = tsAnnotationShape(text);
+      if (!shape) return;
+      paramTypes[i] = makeAbs(shape, undefined, undefined, "path");
+      fnChanged = true;
+    });
+    let returnType = fn.shape.returnType;
+    if (returnType === undefined && ann.returnType === undefined) {
+      // BUG-381：成员自己的分析已给出返回域（`fn f => number exact`）。
+      const analyzed = analyzedReturns?.get(ann.key);
+      if (analyzed !== undefined) {
+        returnType = analyzed;
+        fnChanged = true;
+      }
+    }
+    if (returnType === undefined && ann.returnType !== undefined) {
+      if (safeValueAnnotation(ann.returnType, surface, refs).unresolved === undefined) {
+        const shape = tsAnnotationShape(ann.returnType);
+        if (shape) {
+          returnType = makeAbs(shape, undefined, undefined, "path");
+          fnChanged = true;
+        }
+      }
+    }
+    if (!fnChanged) continue;
+    slots[ann.key] = {
+      ...slot,
+      value: {
+        ...fn,
+        shape: { ...fn.shape, paramTypes, ...(returnType !== undefined ? { returnType } : {}) },
+      },
+    };
+    changed = true;
+  }
+  return changed ? { ...a, shape: { ...a.shape, slots } } : a;
+}
+
+/** brand 实例形状 → 字段声明（排除方法名——方法进类体，不进字段） */
+
+function brandFieldLines(
+  brand: Abs | undefined,
+  methodNames: Set<string>,
+): Array<{ name: string; type: string }> {
+  if (!brand) return [];
+  const brandShape = brand.shape;
+  if (brandShape.k !== "brand") return [];
+  const instance = brandShape.shape;
+  if (instance.shape.k !== "obj") return [];
+  const out: Array<{ name: string; type: string }> = [];
+  for (const [k, slot] of Object.entries(instance.shape.slots)) {
+    if (methodNames.has(k)) continue;
+    // Bug 240：私有字段（`#x`）是 internal 槽 ⇒ 不是用户可见属性 ⇒ 不进类体
+    // （与 core 三面同判据）。
+    if (isHiddenInternalSlot(k, slot)) continue;
+    out.push({ name: k, type: absToTSTypeIr(widenParamAbs(slot.value)) });
+  }
+  return out;
+}
+
+/** Abs 树里的 brand（类实例类型）收集：类名 → brand Abs */
+/**
+ * BUG-054：Abs 里出现的 brand 类名集合（值声明的实例类型 ⇒ 产物要能解析该类）。
+ */
