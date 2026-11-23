@@ -31,7 +31,12 @@ const CLI_ENV = {
   TSX_TSCONFIG_PATH: join(repoRoot, "tsconfig.json"),
 };
 
-type CliIssue = { code?: string; severity?: "error" | "warning" | "info" };
+type CliIssue = {
+  code?: string;
+  severity?: "error" | "warning" | "info";
+  line?: number;
+  column?: number;
+};
 type CliJson = {
   issues?: CliIssue[];
   pathErrors?: Array<{ code?: string }>;
@@ -86,6 +91,16 @@ describe("CLI check --json ↔ LSP check 诊断面", () => {
 
       for (const [code, severity] of lspByCode) {
         if (cliByCode.has(code)) expect(severity, `severity drift for ${code}`).toBe(cliByCode.get(code));
+      }
+
+      // 同一 code 的源码锚点必须一致：CLI 行号 1-based，LSP 0-based。
+      const cliIssue = (cli.issues ?? []).find((i) => i.code === "nudo:entry-may-throw");
+      const lspIssue = lsp.find((d) => d.code === "nudo:entry-may-throw");
+      expect(cliIssue?.line).toBeGreaterThan(0);
+      expect(lspIssue).toBeDefined();
+      expect(lspIssue!.range.start.line + 1).toBe(cliIssue!.line);
+      if (cliIssue!.column !== undefined && cliIssue!.column < 999) {
+        expect(lspIssue!.range.start.character).toBe(cliIssue!.column);
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });

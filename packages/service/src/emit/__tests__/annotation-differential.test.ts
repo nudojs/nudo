@@ -248,6 +248,32 @@ describe("注解解析差分矩阵：nudo dts ≡ tsc dts", () => {
     }
   });
 
+  it("tsconfig extends 数组：后者覆盖前者的 paths / baseUrl", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-tsconfig-array-"));
+    try {
+      mkdirSync(join(dir, "first", "types"), { recursive: true });
+      mkdirSync(join(dir, "second", "types"), { recursive: true });
+      writeFileSync(
+        join(dir, "first", "tsconfig.json"),
+        JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@m/*": ["types/*"] } } }),
+      );
+      writeFileSync(join(dir, "first", "types", "opts.ts"), 'export interface Opts { from: "first" }\n');
+      writeFileSync(
+        join(dir, "second", "tsconfig.json"),
+        JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@m/*": ["types/*"] } } }),
+      );
+      writeFileSync(join(dir, "second", "types", "opts.ts"), 'export interface Opts { from: "second" }\n');
+      writeFileSync(
+        join(dir, "tsconfig.json"),
+        JSON.stringify({ extends: ["./first/tsconfig.json", "./second/tsconfig.json"] }),
+      );
+      writeFileSync(join(dir, "lib.ts"), 'import type { Opts } from "@m/opts";\n');
+      expect(typeAnnotationSourceOf("@m/opts", join(dir, "lib.ts"))).toContain('from: "second"');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("tsconfig paths 通配优先级：`@app/*` 胜过前置的 `*`（最长前缀优先，不按插入序）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-tsconfig-priority-"));
     try {
