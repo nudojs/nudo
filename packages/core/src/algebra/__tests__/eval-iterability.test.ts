@@ -271,3 +271,58 @@ describe("user class @@iterator is total（BUG-118）", () => {
     expect(r.value).toContain("1");
   });
 });
+
+describe("iterable consumers agree on the same element sequence", () => {
+  const PRELUDE = `class It { *[Symbol.iterator]() { yield 1; yield 2; yield 3; } }
+function* gen() { yield 1; yield 2; yield 3; }
+`;
+  const CASES: ReadonlyArray<readonly [string, string, number]> = [
+    ["Set", "new Set([1, 2, 3])", 3],
+    ["Map entries", "new Map([[1, 2], [3, 4]])", 2],
+    ["TypedArray", "new Uint8Array([1, 2, 3])", 3],
+    ["boxed String", 'new String("abc")', 3],
+    ["user iterable", "new It()", 3],
+    ["generator", "gen()", 3],
+  ];
+
+  it.each(CASES)("%s：spread / rest / for-of / Array.from 同长度", (_label, expr, len) => {
+    const source = `${PRELUDE}
+export function spread() { return [...${expr}].length; }
+export function rest() { const [a, ...r] = ${expr}; return r.length + 1; }
+export function loop() { let n = 0; for (const v of ${expr}) n++; return n; }
+export function from() { return Array.from(${expr}).length; }
+`;
+    for (const fn of ["spread", "rest", "loop", "from"] as const) {
+      // Set/Map 的 Array.from 沿用既有 arr + 元素域口径（长度抽象是契约，
+      // collections.test 明确钉住）；其余三个消费者仍按精确元素数比较。
+      if (fn === "from" && (_label === "Set" || _label === "Map entries")) continue;
+      const r = evalSrc(source, fn, []);
+      expect(r.value, `${fn} ${expr}`).toContain(String(len));
+    }
+  });
+});
+
+describe("rest destructuring consumes the shared iterable capability", () => {
+  it.each([
+    ["literal string", `const [a, ...r] = "abc"; return a + ":" + r.join("");`, "a:bc"],
+    [
+      "boxed String",
+      `const [a, ...r] = new String("abc"); return a + ":" + r.join("");`,
+      "a:bc",
+    ],
+    [
+      "TypedArray",
+      `const [a, ...r] = new Uint8Array([1, 2, 3]); return a + ":" + r.join("");`,
+      "1:23",
+    ],
+    [
+      "user class @@iterator",
+      `export class Iter { *[Symbol.iterator]() { yield 1; yield 2; yield 3; } }
+       export function f() { const [a, ...r] = new Iter(); return a + ":" + r.join(""); }`,
+      "1:23",
+    ],
+  ])("%s", (_label, src, expected) => {
+    const r = evalSrc(src.includes("export function f") ? src : `export function f() { ${src} }`);
+    expect(r.value).toContain(expected);
+  });
+});

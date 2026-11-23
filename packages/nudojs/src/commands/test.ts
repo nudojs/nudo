@@ -14,6 +14,8 @@ import {
   analyzeFileAsync,
   collectEvalReplacements,
   getPathEnvLoadErrors,
+  SYNTAX_ERROR_CODE,
+  USAGE_ERROR_CODE,
   type AlsoSynthesizeCases,
   type AnalysisResult,
   type CallRecord,
@@ -74,12 +76,6 @@ type TestFailure = {
   suggestion: string;
 };
 
-/** 用法错误的机器面码（与 `check` / `contract` 的 `nudo:usage-error` 同码）。 */
-const USAGE_ERROR_CODE = "nudo:usage-error";
-
-/** 语法错的机器面码（与 check 面 `pathErrors[{code:"syntax-error"}]` 同码）。 */
-const SYNTAX_ERROR_CODE = "syntax-error";
-
 /**
  * CaseJson 失败信封（`--json` 机器面）——**路径错误 / 用法错误 / 语法错
  * 共用这一条**（Bug 957）：形状与既有「路径错误」信封逐字同构
@@ -109,7 +105,11 @@ function failureEnvelope(
       externalFunctions: 0,
       cases: 0,
       diagnostics: 0,
-      errors: failures.length + (targetErrors?.length ?? 0),
+      // BUG-373：`targetErrors` 是 `failures` 的**精确子集**（shared.ts 的闸门
+      // 错误同时留在 pathErrors）⇒ 不得重复计数。
+      errors: failures.length,
+      // 与 check --json 同口径的消歧字段。
+      pathErrors: failures.length,
     },
     functions: [],
     diagnostics: [],

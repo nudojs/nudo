@@ -401,11 +401,12 @@ async function runExport(
       ...(evalMocks ? { mocks: evalMocks } : {}),
     };
     const paramExps = arrayPatternParamFaces(fn, unifiedParamFace(fn, eff, caseResults));
-    const outputAbs = unifiedReturnFace(fn, eff, caseResults, faceCtx);
+    const outputFace = unifiedReturnFace(fn, eff, caseResults, faceCtx);
+    const outputAbs = outputFace.abs;
 
     if (wantsSchema(format)) {
       // 一个可 import 的 zod 模块：`<fn>Input`（参数对象）+ `<fn>Output`
-      for (const [name, abs] of zodFaceEntries(baseName, paramExps, outputAbs)) {
+      for (const [name, abs] of zodFaceEntries(baseName, paramExps, outputAbs, outputFace.widen)) {
         // 同名条目不折叠（Bug 623）：占用表命中 ⇒ 加 `_2` / `_3` … 后缀
         let key = name;
         for (let i = 2; zodExportNames.has(key); i++) {
@@ -417,7 +418,16 @@ async function runExport(
     }
 
     if (wantsStandard(format)) {
-      const chunk = standardFaceChunk(fn, baseName, paramExps, eff, outputAbs, faceCtx, brandScope);
+      const chunk = standardFaceChunk(
+        fn,
+        baseName,
+        paramExps,
+        eff,
+        outputAbs,
+        faceCtx,
+        brandScope,
+        outputFace.widen,
+      );
       if (chunk) {
         standardChunks.push(chunk.source);
         for (const note of chunk.dropped) {
@@ -429,7 +439,7 @@ async function runExport(
     if (format === "guard" || format === "all") {
       // 守卫消费**统一返回面**（契约面优先，599 / 613）⇒ 与 zod / standard /
       // dts 三个面同一口径（出口域 = 契约申报的域，不再是单次调用点字面量）
-      guardChunks.push(guardFaceChunk(baseName, outputAbs, guardIdents));
+      guardChunks.push(guardFaceChunk(baseName, outputAbs, guardIdents, outputFace.widen));
     }
 
     if (format === "dts" || format === "all") {

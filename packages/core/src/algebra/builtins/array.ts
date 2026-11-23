@@ -30,7 +30,12 @@ import { markFreshInstance } from "../key/instance-id.ts";
 import { recordMayThrow } from "../diagnostics/may-throw.ts";
 import { matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf, userIterLenOf } from "../exec/match-iter.ts";
 import { abstractSeqElementOf } from "./error/iterator.ts";
-import { iterabilityKind, $elems, builtinExactIterableElems } from "../exec/runtime/containers/iterate.ts";
+import {
+  iterabilityKind,
+  iterableExactElements,
+  $elems,
+  builtinExactIterableElems,
+} from "../exec/runtime/containers/iterate.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { and, ge, lt, pTrue, type Pred } from "../pred.ts";
@@ -43,7 +48,25 @@ import { boolPrim, peelBrand, noBody, str, mayCoerceThrowOperand } from "./share
 import { thenableRiskOf } from "./promise.ts";
 import { isSymbolAbs } from "./symbol.ts";
 
-export function makeArrayCtorAbs(args: Abs[]): Abs {
+/** `new Array<T>` 的调用位类型实参提示（`"number"` 等）→ 元素 Abs。 */
+function arrayElementHint(hint: Abs | undefined): Abs | undefined {
+  if (!hint) return undefined;
+  const v = litValue(hint);
+  if (!v.ok || typeof v.value !== "string") return undefined;
+  if (v.value === "any" || v.value === "unknown") return abs({ k: v.value }, undefined, undefined, "path");
+  if (["string", "number", "boolean", "bigint", "symbol"].includes(v.value)) {
+    return abs(
+      { k: "prim", type: v.value as "string" | "number" | "boolean" | "bigint" | "symbol" },
+      undefined,
+      undefined,
+      "path",
+    );
+  }
+  return undefined;
+}
+
+export function makeArrayCtorAbs(args: Abs[], typeHint?: Abs): Abs {
+  const hintEl = arrayElementHint(typeHint);
   /**
    * 长度实参已证非负（`b.length + 1` 类：$len 带 pred ≥0，add 的 addPred
    * 平移界）→ 负数维度排除。非整数维度（抽象 number 无整数性事实）在此
@@ -55,7 +78,9 @@ export function makeArrayCtorAbs(args: Abs[]): Abs {
     return b?.lo !== undefined && b.lo.value >= 0;
   };
   if (args.length === 0) {
-    return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
+    return hintEl
+      ? abs({ k: "arr", element: hintEl }, undefined, undefined, "exact")
+      : abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
   }
   if (args.length >= 2) {
     return abs(
@@ -95,7 +120,7 @@ export function makeArrayCtorAbs(args: Abs[]): Abs {
       });
     }
     return abs(
-      { k: "arr", element: numberLike(a0) ? undefAbs() : unknown },
+      { k: "arr", element: hintEl ?? (numberLike(a0) ? undefAbs() : unknown) },
       undefined,
       undefined,
       "partial",
@@ -106,6 +131,9 @@ export function makeArrayCtorAbs(args: Abs[]): Abs {
   if (typeof n === "number") {
     if (!Number.isInteger(n) || n < 0 || n > 4294967295) {
       throw new NudoThrow(errorTypeAbs("RangeError"));
+    }
+    if (hintEl) {
+      return abs({ k: "arr", element: hintEl }, undefined, undefined, "exact");
     }
     if (n > TUPLE_MATERIALIZE_CAP) {
       // 合法但巨大：不物化巨 tuple——元素域仍可判定为 undefined（Bug 53，
@@ -281,6 +309,22 @@ function evalArrayFrom(args: Abs[]): Abs {
   // 此前 brand 落函数尾部 unknown。
   {
     const exactEls = builtinExactIterableElems(a0);
+    if (exactEls) {
+      const mapped = exactEls.map((el, i) => mapOne(el, numLit(i)));
+      return abs(
+        { k: "tuple", elements: mapped },
+        undefined,
+        undefined,
+        a0.conf === "exact" ? "exact" : "path",
+      );
+    }
+  }
+  // boxed String / 用户 iterable / TypedArray / brand 内层 tuple：精确序列
+  // 由迭代能力统一给出（P4：与 spread / rest / for-of 同一判据）。只接
+  // brand——tuple / arr / prim / obj 已有各自口径（Array.from(arguments)
+  // 的 arr 形状、Set/Map 的抽象长度都是既有契约）。
+  if (k === "brand") {
+    const exactEls = iterableExactElements(a0);
     if (exactEls) {
       const mapped = exactEls.map((el, i) => mapOne(el, numLit(i)));
       return abs(

@@ -1470,10 +1470,9 @@ function checkSourceInner(
     // design §2：无约束 = any（缺 value 或真 any）；真 unknown = 引擎债，不得伪装成 any
     const paramTypes = g.typeParams.map((t) => {
       if (!t.value) return "any";
-      if (t.value.shape.k === "unknown") return "unknown";
-      // 契约面的字面量保形（Bug 348）：`lit(1)` 的字面量只活在 pred 里 ⇒
-      // 走 widen 路径永远看不见它（`x: number`）⇒ check 签名面与 dts 面
-      // （`x: 1`）与契约面（`x: lit(1)`）三面互相矛盾。
+      // BUG-388：独立 nullish 注解（`x: undefined` / `null` / `void`）的
+      // Abs 是 unknown shape + lit term；交给 formatEntryParamShape 区分
+      // 「nullish 字面量」与「真 unknown」（此前早退恒印 unknown）。
       return formatEntryParamShape(t.value);
     });
     signatures.push({

@@ -10,7 +10,12 @@ import {
   objOf,
   type Abs,
 } from "@nudojs/core";
-import { absToTSType, generateDts, generateFunctionDtsLines } from "../dts-generator.ts";
+import {
+  generateDts,
+  generateFunctionDtsLines,
+  projectModuleDts,
+} from "../dts-generator.ts";
+import { absToDtsTypeText as absToTSType } from "../dts-type.ts";
 import { analyzeFile } from "@nudojs/service";
 import { neverAbs, undefLit, tupleSparse, tupleDense, tupleLead, tupleTrail, tupleMulti } from "./fixtures.ts";
 
@@ -537,5 +542,25 @@ describe("入口注解证据进 dts（默认值 / 整参默认解构 / 可选形
     );
     expect(out).toContain("optNum(x?: number): number | undefined");
     expect(out).not.toContain("optNum(x?: number): number;");
+  });
+});
+
+describe("dts dropped 成员台账", () => {
+  it("无源码名的用户符号成员在模块面留 dropped 注释", () => {
+    const symbolObj = objOf({
+      "@@sym#7": { value: num(), symbolKey: true },
+    } as never);
+    const surface = {
+      exportBindings: new Map([["x", "x"]]),
+      reexports: [],
+      classes: new Map(),
+      values: new Map([["x", { kind: "const", nonFunctionValue: true }]]),
+    } as never as Parameters<typeof projectModuleDts>[0];
+    const proj = projectModuleDts(surface, [], {
+      values: new Map([["x", symbolObj]]),
+    });
+    const text = proj.lines.join("\n");
+    expect(text).toContain("// nudo:dropped-type-member @@sym#7");
+    expect(text).toContain("declare const x: Record<string, never>;");
   });
 });

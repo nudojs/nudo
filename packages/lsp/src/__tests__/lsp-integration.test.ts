@@ -3,11 +3,11 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
-  absToTSType,
   absToSchemaSource,
   generateDts,
   generateGuardFunctionFromAbs,
 } from "@nudojs/service/emit";
+import { absToDtsTypeText as absToTSType } from "../../../service/src/emit/dts-type.ts";
 import {
   getAbsAtPosition,
   getCompletionsAtPosition,

@@ -3074,15 +3074,16 @@ describe("absShapeForTsTypeText 不进**公共**面（负控；internal 面已�
       open: true,
       slots: { a: { value: { shape: { k: "obj", open: true } } } },
     });
-    // 可选位 `[string, number?]` 长度可变且位置不确定 ⇒ 降级为
-    // arr(元素域并集)；rest 元组 `[string, ...number[]]` 的位置前缀是真实
-    // 语义 ⇒ 保留 tuple + rest（length 是 number，不是前缀长度）。
+    // 可选位 `[string, number?]` 长度可变但**位置确定** ⇒ 逐合法长度一个
+    // 元组臂（`[string] | [string, number]`），不再塌成 arr 元素并集；
+    // rest 元组 `[string, ...number[]]` 的位置前缀是真实语义 ⇒ 保留
+    // tuple + rest（length 是 number，不是前缀长度）。
     for (const tupleText of ["[string, number?]", "[string, number ?]"]) {
       const sh = absShapeForTsTypeText(tupleText);
-      expect(sh, tupleText).toMatchObject({ k: "arr" });
-      const elem = sh?.k === "arr" ? sh.element.shape : undefined;
-      expect(elem).toMatchObject({ k: "sum" });
-      expect(elem?.k === "sum" ? elem.members.length : 0, tupleText).toBe(2);
+      expect(sh, tupleText).toMatchObject({ k: "sum" });
+      const members = sh?.k === "sum" ? sh.members : [];
+      expect(members.length, tupleText).toBe(2);
+      expect(members.map((m) => m.shape.k), tupleText).toEqual(["tuple", "tuple"]);
     }
     for (const tupleText of ["[string, ...number[]]", "[string, ... number[]]"]) {
       const sh = absShapeForTsTypeText(tupleText);
@@ -3146,7 +3147,7 @@ describe("TS 声明类型文本 → Abs：字面量值域 / 索引签名 / 方�
       k: "tuple",
       elements: [{ shape: { k: "prim", type: "number" } }, { shape: { k: "prim", type: "string" } }],
     });
-    expect(absShapeForTsTypeText("[x: number, y?: string]")).toMatchObject({ k: "arr" });
+    expect(absShapeForTsTypeText("[x: number, y?: string]")).toMatchObject({ k: "sum" });
     expect(absShapeForTsTypeText("(x: number) => string")).toMatchObject({
       k: "fn",
       params: ["x"],
@@ -3228,6 +3229,56 @@ type Alias = Opts;
     expect(absTypeForTsTypeText(resolveNamedTypeText("Name", named))?.shape).toEqual({
       k: "prim",
       type: "string",
+    });
+  });
+
+  it("同文件 class / enum 声明进入具名类型表：实例成员与枚举字面量联合可映射", () => {
+    const src = `class Cat { name: string; meow(): string { return this.name; } }
+enum Color { Red, Green }
+const n: Cat = { name: "x", meow: () => "m" };
+`;
+    const named = namedTypeTextsForSource(src);
+    const cat = resolveNamedTypeText("Cat", named);
+    expect(cat).toContain("name: string");
+    expect(absTypeForTsTypeText(cat)?.shape).toMatchObject({
+      k: "obj",
+      slots: {
+        name: { value: { shape: { k: "prim", type: "string" } } },
+        meow: { value: { shape: { k: "fn" } } },
+      },
+    });
+    expect(absTypeForTsTypeText(resolveNamedTypeText("Color", named))?.shape).toMatchObject({
+      k: "sum",
+      members: [
+        { shape: { k: "prim", type: "number" } },
+        { shape: { k: "prim", type: "number" } },
+      ],
+    });
+  });
+
+  it("Map / Set 注解带原生迭代协议：keys/values/entries 的元素域与 forEach 回调副作用", () => {
+    const map = absTypeForTsTypeText("Map<string, number>")!;
+    const keys = call(`export function f(m) { return [...m.keys()]; }`, "f", [map]);
+    expect(keys.result.shape).toMatchObject({
+      k: "arr",
+      element: { shape: { k: "prim", type: "string" } },
+    });
+    const entries = call(`export function f(m) { return [...m]; }`, "f", [map]);
+    expect(entries.result.shape).toMatchObject({
+      k: "arr",
+      element: { shape: { k: "tuple" } },
+    });
+    const sum = call(
+      `export function f(m) { let n = 0; m.forEach((v) => { n += v; }); return n; }`,
+      "f",
+      [map],
+    );
+    expect(sum.result.shape).toMatchObject({ k: "prim", type: "number" });
+    const set = absTypeForTsTypeText("Set<number>")!;
+    const vals = call(`export function f(s) { return [...s.values()]; }`, "f", [set]);
+    expect(vals.result.shape).toMatchObject({
+      k: "arr",
+      element: { shape: { k: "prim", type: "number" } },
     });
   });
 

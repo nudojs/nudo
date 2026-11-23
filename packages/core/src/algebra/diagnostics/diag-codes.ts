@@ -71,6 +71,8 @@ export const DIAG = {
   /** 形参/返回注解有源码文本，但解析器无法映射成 Abs（回落 any）。 */
   annotationUnresolved: "nudo:annotation-unresolved",
   unknownRecv: "nudo:unknown-recv",
+  // --- 分析器诊断（check / test / LSP 共用） ---
+  unreachable: "nudo-unreachable",
   // --- 成员 / 槽位 ---
   missingSlot: "nudo:missing-slot",
   noMethod: "nudo:no-method",
@@ -164,4 +166,6 @@ export const CHECK_FACE_DIAG_CODES: readonly DiagCode[] = [
   // 能力档（BUG-026）：strict 档下被拒的宿主全局 / 内置模块是 unknown 的**成因**。
   // `nudo test` 一直报它，`check` 漏 ⇒ 同一份源码两面结论不同、门禁看不到成因。
   DIAG.capabilityDenied,
+  // BUG-389：分析器 info 诊断（无冒号的既有码）——check 面必须可见。
+  DIAG.unreachable,
 ];

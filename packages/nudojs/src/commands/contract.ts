@@ -14,7 +14,7 @@ import {
   formatContractSurfaceLine,
   type ContractSurfaceEntry,
 } from "@nudojs/service/emit";
-import { isNudoTargetPath, type CallRecord } from "@nudojs/service";
+import { isNudoTargetPath, USAGE_ERROR_CODE, type CallRecord } from "@nudojs/service";
 import {
   collectExternalRecords,
   collectTargets,
@@ -91,7 +91,7 @@ async function runContractPrint(
     if (opts?.json === true) {
       console.log(
         JSON.stringify(
-          { file: rel, errors: [{ code: CONTRACT_USAGE_ERROR_CODE, message }] },
+          { file: rel, errors: [{ code: USAGE_ERROR_CODE, message }] },
           null,
           2,
         ),
@@ -134,7 +134,7 @@ async function runContractPrint(
     if (opts?.json === true) {
       console.log(
         JSON.stringify(
-          { file: rel, errors: [{ code: CONTRACT_USAGE_ERROR_CODE, message }] },
+          { file: rel, errors: [{ code: USAGE_ERROR_CODE, message }] },
           null,
           2,
         ),
@@ -256,9 +256,6 @@ type ContractJsonError = {
   message: string;
   suggestion?: string;
 };
-
-/** 用法错误的机器面码（与 `check` 的 `usageErrorExit` 同码族）。 */
-const CONTRACT_USAGE_ERROR_CODE = "nudo:usage-error";
 
 /** 某个 root 分析失败（解析 / 分析抛错）的机器面码。 */
 const CONTRACT_ANALYSIS_FAILED_CODE = "nudo:contract-analysis-failed";
@@ -414,7 +411,7 @@ export function registerContractCommand(program: Command): void {
                   contractErrorEntry([
                     {
                       path: "",
-                      code: CONTRACT_USAGE_ERROR_CODE,
+                      code: USAGE_ERROR_CODE,
                       message,
                       ...(suggestion ? { suggestion } : {}),
                     },
@@ -680,7 +677,7 @@ export function registerContractCommand(program: Command): void {
           if (jsonMode) {
             jsonEntries.push({
               file: missed.length === 1 ? missed[0]!.rel : "",
-              errors: [{ code: CONTRACT_USAGE_ERROR_CODE, message }],
+              errors: [{ code: USAGE_ERROR_CODE, message }],
             });
           } else {
             console.error(message);

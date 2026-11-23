@@ -1375,3 +1375,22 @@ describe("-json 下用法错误也有机器可读信封（stdout 不得为空）
 
 });
 });
+
+describe("test --json 路径错误计数（BUG-373）", () => {
+  it("单个缺失目标只计一次，并带 summary.pathErrors", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-test-json-373-"));
+    try {
+      const r = runCliTsx(["test", "--json", join(dir, "missing.ts")], { cwd: dir });
+      expect(r.status).toBe(1);
+      const env = JSON.parse(r.stdout) as {
+        summary: { errors: number; pathErrors: number };
+        pathErrors: unknown[];
+      };
+      expect(env.summary.errors).toBe(1);
+      expect(env.summary.pathErrors).toBe(1);
+      expect(env.pathErrors).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

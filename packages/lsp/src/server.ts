@@ -43,6 +43,7 @@ import {
   toLspDiagnostic,
   uriToFilePath,
   validateText,
+  parseFailureDiagnostic,
   filterDiagnosticsByLevel,
   diagnosticsLevelForFile,
   getCachedCheckDiags,
@@ -1116,13 +1117,19 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
         `nudo pull diagnostics failed for ${params.textDocument.uri}: ${(err as Error).message}`,
       );
       const last = lastPullItems.get(params.textDocument.uri);
-      const errDiag = {
-        severity: DiagnosticSeverity.Error,
-        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-        message: `Analysis error: ${sanitizeErrorMessage((err as Error).message, workspaceRoots)}`,
-        source: "nudo",
-      } as ReturnType<typeof toLspDiagnostic>;
-      const items = last && last.length > 0 ? last : [errDiag];
+      const filePath = uriToFilePath(params.textDocument.uri);
+      const level = diagnosticsLevelForFile(filePath);
+      const errDiag = parseFailureDiagnostic(
+        filePath,
+        document.getText(),
+        err,
+      ) as ReturnType<typeof toLspDiagnostic>;
+      const items =
+        level === "off"
+          ? []
+          : last && last.length > 0
+            ? last
+            : [errDiag];
       // BUG-021/S5-003：stale 回放（上次成功 items / 错误兜底）
       // 不得标当前 version——宿主据此无法分辨新旧。留空表示
       // 「新鲜度未知」；成功路径才带 document.version。

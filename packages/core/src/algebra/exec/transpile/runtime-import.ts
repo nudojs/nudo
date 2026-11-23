@@ -148,7 +148,9 @@ export const RUNTIME_IMPORT_NAMES: readonly string[] = [
   "$removeNull",
   "$removeUndefined",
   "$removeMemberNullish",
+  "$narrowArray",
   "$narrowIn",
+  "$narrowInstanceof",
   "$narrowMemberEq",
   "$narrowTypeOf",
   // try 软抛出 / 记录

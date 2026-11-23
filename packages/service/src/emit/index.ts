@@ -57,21 +57,22 @@ export {
 } from "../what-if.ts";
 
 // ─── DTS / Schema / Guard（外延投影，单向） ─────────────────────────
+export { dtsModuleSurface } from "./dts-surface-module.ts";
 export {
   generateDts,
   generateFunctionDtsLines,
   projectFunctionDts,
-  dtsModuleSurface,
   projectModuleDts,
-  absToTSType,
   type DtsContractFace,
   type DtsFunctionProjection,
-  type DtsModuleSurface,
   type DtsModuleProjection,
   type DtsModuleExtras,
-  type DtsValueSurface,
-  type DtsClassSurface,
 } from "./dts-generator.ts";
+export type {
+  DtsClassSurface,
+  DtsModuleSurface,
+  DtsValueSurface,
+} from "./dts-ir.ts";
 
 export {
   absToSchemaSource,
@@ -86,6 +87,11 @@ export {
   type SchemaRefinement,
   type ZodModuleProjection,
 } from "./schema-generator.ts";
+
+export {
+  projectValidatorOutput,
+  type ReturnWidenMode,
+} from "./projection-policy.ts";
 
 export {
   absToStandardSchemaFunction,

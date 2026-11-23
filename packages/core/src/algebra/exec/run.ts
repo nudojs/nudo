@@ -12,6 +12,7 @@
  */
 
 import { drainPendingGens } from "./match-iter.ts";
+import { ALLOWED_NODE_BUILTINS, DENIED_NODE_BUILTINS } from "./capabilities.ts";
 
 import {
   rtAllBindings,
@@ -249,6 +250,18 @@ function requireFromModules(
   if (typeof spec !== "string") return unknown;
   const mod = modules?.[spec] as AbsModuleExports | undefined;
   if (!mod) {
+    // BUG-396：`require("path")` / `require("node:fs")` 在宿主里必定成功。
+    // 无注入模块时不得按「缺失模块」硬抛 Error（那会把合法入口判 exit 1）；
+    // 与 ESM import 的 `!mod → unknown` 同口径。真缺失（相对 / npm 包）
+    // 仍在调用期抛 Error。
+    const name = spec.replace(/^node:/, "");
+    if (
+      spec.startsWith("node:") ||
+      ALLOWED_NODE_BUILTINS.has(name) ||
+      DENIED_NODE_BUILTINS.has(name)
+    ) {
+      return unknown;
+    }
     if (loading) return unknown;
     throw new NudoThrow(
       errorBrandAbs("Error", [strLit(`Cannot find module '${spec}'`)]),

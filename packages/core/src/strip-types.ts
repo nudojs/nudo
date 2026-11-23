@@ -1326,8 +1326,34 @@ function deleteTypeSyntaxFields(
     delete node.typeParameters;
   }
   // Babel 8：CallExpression / NewExpression 的类型实参字段名为 typeArguments
-  const taArgs = node.typeArguments as { type?: string } | undefined;
+  const taArgs = node.typeArguments as
+    | { type?: string; params?: unknown[] }
+    | undefined;
   if (taArgs && typeof taArgs.type === "string" && taArgs.type.startsWith("TSTypeParameter")) {
+    // BUG-368：调用点类型实参（`new Array<number>(n)` / `foo<string>(1)`）
+    // 的**文本**留旁路，供 Array 构造器播种元素域；字段本身仍删（产物面
+    // 不得含 TS 语法）。
+    const params = taArgs.params;
+    if (source !== undefined && Array.isArray(params)) {
+      const texts = params
+        .map((p) =>
+          tsTypeText(
+            source,
+            p as { start?: number | null; end?: number | null } | undefined,
+          ),
+        )
+        .filter((t): t is string => t !== undefined);
+      if (texts.length > 0) {
+        // 与 nudoTypeText 同口径：旁路字段必须**不可枚举**（AST 深比较 /
+        // Babel 打印 / 消费方遍历不得看到引擎私有字段）。
+        Object.defineProperty(node, "nudoTypeArguments", {
+          value: texts,
+          enumerable: false,
+          configurable: true,
+          writable: true,
+        });
+      }
+    }
     delete node.typeArguments;
   }
   const ta = node.typeAnnotation as

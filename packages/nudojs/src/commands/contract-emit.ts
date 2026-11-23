@@ -20,16 +20,8 @@
 import { readFileSync } from "node:fs";
 import { resolve, relative } from "node:path";
 import { formatEmitSummary } from "@nudojs/service/emit";
-import { writeFileAtomic, type CallRecord } from "@nudojs/service";
+import { writeFileAtomic, USAGE_ERROR_CODE, type CallRecord } from "@nudojs/service";
 import { relFromCwd } from "./shared.ts";
-
-/**
- * 机器面**用法错误**码（族 20 · Bug 657）。
- *
- * 与 `contract.ts` 的 `CONTRACT_USAGE_ERROR_CODE` **同值**（同一条协议常量）。
- * 两处各自定义 ⇒ 不跨模块 import ⇒ 片 A 的 `contract.ts` 零改动。
- */
-const CONTRACT_USAGE_ERROR_CODE = "nudo:usage-error";
 
 /**
  * 派生结果的 `fn` 字段是**同一侧车一组导出名的逗号拼接**
@@ -237,7 +229,7 @@ export async function runContractEmit(
         // 机器面：吐**合法 JSON 文档**（否则聚合层判「不是 JSON 文档」）
         console.log(
           JSON.stringify(
-            { file: rel, errors: [{ code: CONTRACT_USAGE_ERROR_CODE, message }] },
+            { file: rel, errors: [{ code: USAGE_ERROR_CODE, message }] },
             null,
             2,
           ),

@@ -447,7 +447,10 @@ function emitInvokeTail(
     // 求值为 undefined，剩余跳（`o.b?.().c` 的 `.c`）**不再求值/不抛**。
     // 故短路臂发 undefined，剩余链整体搬进 else 臂（接收者 = 调用结果）。
     const fnFork = (recv: string): string =>
-      `((${tmp.fn}) => $fork($nullishTest(${tmp.fn}), () => $lit(void 0), () => ${contOf(recv, tmp.fn)}))(${readFn(recv)})`;
+      // BUG-404：preRead 若是可选槽 `$get` 的 sum（fn | undefined），
+      // `getFnImpl` 按 Abs 身份取不到 impl ⇒ 落 unknown。非 nullish 臂
+      // 先剥 nullish，得到 fn 成员本体。
+      `((${tmp.fn}) => $fork($nullishTest(${tmp.fn}), () => $lit(void 0), () => ${contOf(recv, `$removeNullish(${tmp.fn})`)}))(${readFn(recv)})`;
     if (hop.recvOptional) {
       // 接收者 nullish 亦整链短路：外层 fork 承载（内层 fn fork 在其 else 臂内）
       return `((${tmp.oc}) => $fork($nullishTest(${tmp.oc}), () => $lit(void 0), () => ${fnFork(`$removeNullish(${tmp.oc})`)}))(${valSrc})`;

@@ -1263,7 +1263,11 @@ function (`,
     });
     // 不得 items:[] 把瞬时失败当「文件干净」——必须留错误面
     expect(result.items.length).toBeGreaterThan(0);
-    expect(result.items.some((d: { message: string }) => /Analysis error|Check error/.test(d.message))).toBe(true);
+    expect(
+      result.items.some((d: { message: string }) =>
+        /Analysis error|Check error|syntax error/.test(d.message),
+      ),
+    ).toBe(true);
   }
   {
     const mock = startServer();

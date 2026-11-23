@@ -59,6 +59,7 @@ export const FACET_SPECS = {
   genNext: { kind: "abs-ref", prefix: "gn" },
   genElements: { kind: "abs-list", prefix: "ge" },
   provenance: { kind: "string", prefix: "p" },
+  frozen: { kind: "flag", prefix: "fr" },
 } satisfies Record<keyof AbsFacets, FacetSpec>;
 
 /**

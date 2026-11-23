@@ -13,34 +13,7 @@
 
 import { parseSource as parse } from "../parse-source.ts";
 import type { Node } from "@babel/types";
-
-/**
- * 类 / 对象成员键名（Bug 105）：Identifier（非计算）/ 字符串字面量 /
- * 数字字面量 / **静态计算字面键**（`["mk"]`）都返回稳定名；动态计算键
- * （`[k]()`，computed + Identifier）没有稳定名 ⇒ undefined。
- *
- * `listTopFunctions` 的类方法普查此前只认 `Identifier` ⇒ 把字符串 / 计算 /
- * 数字键方法整类丢弃（无签名、无 L2、侧车契约照收却零执法）。与
- * `scan-named-exports.ts` 的 `identName` / service 的 `classMemberKeyName`
- * 口径对齐（后者返回 `key.name ?? key.value`，含字符串 / 数字）。
- */
-function memberKeyOf(node: unknown): string | undefined {
-  const m = node as
-    | {
-        key?: { type?: string; name?: string; value?: unknown } | undefined;
-        computed?: boolean;
-      }
-    | undefined;
-  const k = m?.key;
-  if (!k) return undefined;
-  if (k.type === "Identifier") {
-    return m?.computed === true || typeof k.name !== "string" ? undefined : k.name;
-  }
-  const v = k.value;
-  if (typeof v === "string") return v;
-  if (typeof v === "number") return String(v);
-  return undefined;
-}
+import { literalConstValuesOf, memberKeyNameOf } from "./member-keys.ts";
 
 /** 类体成员是否是可登记的方法（跳过 ctor / getter / setter / 类字段） */
 function isClassMethodNode(mem: { type?: string; kind?: string }): boolean {
@@ -91,6 +64,8 @@ export function defaultExportLocalName(
 export function listTopFunctions(source: string, file?: ReturnType<typeof parse>): string[] {
   const f = file ?? parse(source);
   const names: string[] = [];
+  /** BUG-385：顶层 `const k = "dyn"` ⇒ 计算键 `[k]()` 的稳定名。 */
+  const literalConsts = literalConstValuesOf(f.program.body);
   /** 本地类（ClassDeclaration + `export const C = class {}` 的类表达式） */
   const localClasses = new Map<string, Node>();
   /**
@@ -208,7 +183,7 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
         };
         if (!isClassMethodNode(mem)) continue; // skip ctor/get/set/field
         // Bug 105：字符串 / 静态计算 / 数字键方法与 Identifier 键同口径
-        const keyName = memberKeyOf(mem);
+        const keyName = memberKeyNameOf(mem, literalConsts);
         if (!keyName) continue;
         out.push({ key: keyName, isStatic: mem.static === true });
       }
@@ -302,11 +277,17 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
     for (const m of flattenObjectMembers(node)) {
       const keyType = m.key?.type;
       const computedLiteral = keyType === "StringLiteral" || keyType === "NumericLiteral";
-      if (m.computed === true && !computedLiteral) {
+      // BUG-385：`[k]` 且 `k` 是字面量 const 时可定名，不按动态键跳过。
+      const computedConst =
+        m.computed === true &&
+        keyType === "Identifier" &&
+        typeof m.key?.name === "string" &&
+        literalConsts.has(m.key.name);
+      if (m.computed === true && !computedLiteral && !computedConst) {
         out.push(m);
         continue;
       }
-      const keyName = memberKeyOf(m as never);
+      const keyName = memberKeyNameOf(m as never, literalConsts);
       if (keyName === undefined) {
         out.push(m);
         continue;
@@ -347,7 +328,7 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
     const out: string[] = [];
     for (const m of finalObjectMembers(node)) {
       if (!isCallableObjectMember(m)) continue;
-      const keyName = memberKeyOf(m as never);
+      const keyName = memberKeyNameOf(m as never, literalConsts);
       if (keyName) out.push(keyName);
     }
     return out;
@@ -546,12 +527,12 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
             // Bug 996：getter / setter **不是**可调用入口（`kind` 是 get/set）⇒
             // 不进普查（否则凭空造出 `f() => unknown` + 假的 L2 entry-may-throw）。
             if (prop2.kind && prop2.kind !== "method") continue;
-            const keyName = memberKeyOf(member as never);
+            const keyName = memberKeyNameOf(member as never, literalConsts);
             if (keyName && !names.includes(keyName)) names.push(keyName);
             continue;
           }
           if (prop2.type !== "ObjectProperty" && prop2.type !== "Property") continue;
-          const keyName = memberKeyOf(member as never);
+          const keyName = memberKeyNameOf(member as never, literalConsts);
           if (keyName) pushFnFromInit(keyName, prop2.value);
         }
       }

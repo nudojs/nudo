@@ -94,6 +94,7 @@ import {
   narrowNotNaNArmThunk,
   narrowImplicitElseArmThunk,
   setTypePredicateSource,
+  assertionNarrowingOf,
 } from "./predicates.ts";
 import {
   matchAsOverride,
@@ -158,6 +159,93 @@ import { emitTryStatement } from "./try-stmt.ts";
  * loop/switch 域发射器（./loop-stmt.ts、./switch-stmt.ts）共引本判定。 */
 export function undefinedIsIntrinsicOf(opts: TranspileOptions): boolean {
   return opts.shadowedIntrinsics?.has("undefined") !== true;
+}
+
+/**
+ * BUG-369：非 `declare` namespace 的运行时对象模型。
+ *
+ * TS namespace 的运行时语义 = 一个对象：`export` 的成员挂在对象上。此前降级
+ * 为 `$unknown()` ⇒ `NS.x` / `NS.f()` 全 unknown。这里用 IIFE 发射局部声明
+ * 并返回 `$obj({ exported: local })`，成员读/调用走既有对象派发。
+ */
+function emitNamespace(
+  name: string,
+  body: readonly unknown[],
+  depth: number,
+  opts: TranspileOptions,
+): string {
+  const pad = indent(depth);
+  const inner = indent(depth + 2);
+  const lines: string[] = [];
+  const exported = new Map<string, string>();
+  const add = (exportedName: string, local: string): void => {
+    if (!exported.has(exportedName)) exported.set(exportedName, local);
+  };
+  for (const raw of body) {
+    let stmt = raw as {
+      type?: string;
+      declaration?: unknown;
+      specifiers?: Array<{ type?: string; local?: { name?: string }; exported?: { name?: string; value?: unknown } }>;
+      id?: { type?: string; name?: string };
+      declarations?: unknown[];
+      body?: { body?: unknown[] };
+    };
+    let isExport = false;
+    if (stmt.type === "ExportNamedDeclaration") {
+      if (stmt.declaration) {
+        stmt = stmt.declaration as typeof stmt;
+        isExport = true;
+      } else {
+        for (const spec of stmt.specifiers ?? []) {
+          if (spec.type !== "ExportSpecifier") continue;
+          const local = spec.local?.name;
+          const exp = spec.exported?.name ?? spec.exported?.value;
+          if (local && typeof exp === "string") add(exp, local);
+        }
+        continue;
+      }
+    }
+    if (
+      stmt.type === "ImportDeclaration" ||
+      stmt.type === "TSInterfaceDeclaration" ||
+      stmt.type === "TSTypeAliasDeclaration"
+    ) {
+      continue;
+    }
+    // 嵌套 namespace：递归发射同名对象绑定。
+    if (stmt.type === "TSModuleDeclaration") {
+      const innerName = stmt.id?.type === "Identifier" ? stmt.id.name : undefined;
+      if (!innerName) continue;
+      lines.push(emitNamespace(innerName, stmt.body?.body ?? [], depth + 2, opts));
+      if (isExport) add(innerName, innerName);
+      continue;
+    }
+    // enum 的运行时对象面不在本语句族（模块导出路径已建模）；在 namespace
+    // 内部保守发空对象，避免整条 namespace 落 opaque。
+    if (stmt.type === "TSEnumDeclaration") {
+      const enumName = stmt.id?.name;
+      if (enumName) {
+        lines.push(`${inner}const ${enumName} = $obj({});`);
+        if (isExport) add(enumName, enumName);
+      }
+      continue;
+    }
+    lines.push(transpileStatement(stmt as unknown as Statement, depth + 2, opts));
+    if (!isExport) continue;
+    if (stmt.type === "VariableDeclaration") {
+      for (const d of stmt.declarations ?? []) {
+        const id = (d as { id?: unknown }).id;
+        if (!id) continue;
+        const names = new Set<string>();
+        collectPatternNames(id as never, names);
+        for (const n of names) add(n, n);
+      }
+    } else if (stmt.id?.name) {
+      add(stmt.id.name, stmt.id.name);
+    }
+  }
+  const entries = [...exported].map(([e, l]) => `${JSON.stringify(e)}: ${l}`).join(", ");
+  return `${pad}const ${name} = (() => {\n${lines.join("\n")}\n${inner}return $obj({ ${entries} });\n${pad}})();`;
 }
 
 export function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
@@ -324,6 +412,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             return `${pad}// <namespace ${name}: merged with the same-name namespace>`;
           }
           emitted.add(name);
+        }
+        // BUG-369：块体 namespace 发运行时对象（导出成员挂在对象上）。
+        const nsBody = (stmt as unknown as { body?: { type?: string; body?: unknown[] } }).body;
+        if (nsBody?.type === "TSModuleBlock" && Array.isArray(nsBody.body)) {
+          return emitNamespace(name, nsBody.body, depth, { ...opts, nsOpaqueNames: undefined });
         }
         return `${pad}const ${name} = $unknown();`;
       }
@@ -682,10 +775,18 @@ function emitExpressionStatement(
   // 此处的语句位写回只剩 Bug 96 正则状态（见 emitStmtWritebackRebinds）。
   const expr = stmt.expression as Expression;
   const exprRebinds = emitStmtWritebackRebinds(expr, opts, pad);
-  if (exprRebinds.length > 0) {
+  // BUG-380：`assertS(x);` 之后把 x 窄化为断言目标类型（只对语句位
+  // `asserts x is T` 生效；表达式位 / 成员实参不猜）。
+  const assertion = assertionNarrowingOf(stmt);
+  const assertionLine =
+    assertion !== undefined
+      ? `${pad}${assertion.name} = $narrowTypeOf(${assertion.name}, ${JSON.stringify(assertion.typeOf)}, true);`
+      : undefined;
+  if (exprRebinds.length > 0 || assertionLine !== undefined) {
     return [
       `${pad}${emitTranspileExpression(expr, opts)};`,
       ...exprRebinds,
+      ...(assertionLine !== undefined ? [assertionLine] : []),
     ].join("\n");
   }
   return `${pad}${emitTranspileExpression(stmt.expression, opts)};`;

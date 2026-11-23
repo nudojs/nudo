@@ -104,7 +104,11 @@ import {
  */
 
 /** new X(...) */
-export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined {
+export function evalBuiltinNew(
+  className: string,
+  args: Abs[],
+  typeHint?: Abs,
+): Abs | undefined {
   // Bug 21：TypedArray 家族（TYPED_ARRAY_ELEMENT 表驱动）——length 实参
   // ToIndex 校验；$new 宿主分支共用 makeTypedArrayAbs
   if (typedArrayElementOf(className) !== undefined) {
@@ -128,7 +132,7 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
     case "Promise":
       return evalPromiseCtor(args);
     case "Array":
-      return makeArrayCtorAbs(args);
+      return makeArrayCtorAbs(args, typeHint);
     case "Number":
     case "Boolean":
     case "String":

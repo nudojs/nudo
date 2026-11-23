@@ -330,4 +330,16 @@ export function ref(items) {
     const ev = contracts.get("ref")?.get("items");
     expect(ev?.kind).toBe("shape");
   });
+
+  it("BUG-379 源码注解的可选成员在 body-read 契约里保留 `?`", () => {
+    const src = `
+export function opt(o: { a?: number; b: string }) {
+  return o.a ?? o.b;
+}
+`;
+    const fields = collectParamBodyReadTypes(src).get("opt")?.get("o") ?? [];
+    expect(fields.find((f) => f.field === "a")?.optional).toBe(true);
+    expect(fields.find((f) => f.field === "b")?.optional).toBeUndefined();
+    expect(shapeDslFromFields(fields)).toContain("a?:");
+  });
 });

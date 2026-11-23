@@ -2,7 +2,7 @@
  * 模块套件：diagnostics 面（check/env/contract/directive/pull-push/range/cache）。
  */
 import { describe, it, expect, beforeEach, afterAll, afterEach } from "vitest";
-import { clearValidationState, checkToLspDiagnostics, filterCheckLspByLevel, validateText, type LspDiagnostic, type ValidateTextDeps, lspDiagnosticRange, lineLengthsOf, toLspDiagnostic, envUnresolvedDiags } from "../validation.ts";
+import { clearValidationState, checkToLspDiagnostics, filterCheckLspByLevel, validateText, parseFailureDiagnostic, type LspDiagnostic, type ValidateTextDeps, lspDiagnosticRange, lineLengthsOf, toLspDiagnostic, envUnresolvedDiags } from "../validation.ts";
 import { DiagnosticSeverity, type Connection } from "vscode-languageserver/node";
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1668,4 +1668,24 @@ describe("push diagnostics face (LSP-G6)", () => {
     expect(published[published.length - 1]!.diagnostics.length).toBe(0);
   });
 
+});
+
+describe("parse failure attribution (BUG-374)", () => {
+  it(".js 的 TS-only 语法 ⇒ syntax-error 精确码；.ts 真语法错也带 syntax-error 码", () => {
+    const js = parseFailureDiagnostic(
+      "/t/a.js",
+      "export class C { private x = 1; }\n",
+      new Error("TypeScript-only syntax"),
+    );
+    expect(js.code).toBe("syntax-error");
+    expect(js.message).toContain("TypeScript-only syntax");
+    const ts = parseFailureDiagnostic(
+      "/t/a.ts",
+      "export function f( {\n",
+      new Error("Unexpected token (1:17)"),
+    );
+    expect(ts.code).toBe("syntax-error");
+    expect(ts.message).toContain("syntax error");
+    expect(ts.message).not.toContain("Analysis error");
+  });
 });

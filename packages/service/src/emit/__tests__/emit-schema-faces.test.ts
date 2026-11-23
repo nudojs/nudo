@@ -11,7 +11,7 @@ import { absToStandardSchemaFunction, absToStandardSchema, absToStandardSchemaMo
 import { loadGeneratedModule } from "./fixtures.ts";
 import { absToSchemaNode, absToSchemaSource, schemaNodeToZod, absToZodSchemaModule, constraintToSchemaNode, } from "../schema-generator.ts";
 import ts from "typescript";
-import { absToTSType } from "../dts-generator.ts";
+import { absToDtsTypeText as absToTSType } from "../dts-type.ts";
 import { tscNoEmit } from "./dts-tsc.ts";
 import { emitContract } from "../contract-emitter.ts";
 import { materializeAction, wrapReturnNullable } from "../quickfix-edits.ts";

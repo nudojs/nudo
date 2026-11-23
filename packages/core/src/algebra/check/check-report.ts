@@ -210,8 +210,10 @@ export function checkIssuesFromDiagnostics(
     .map((d) => {
       const data = (d.data ?? {}) as { actual?: unknown; expected?: unknown };
       const isEntryOnly = d.code === DIAG.contractEntryOnly;
+      // BUG-389：`nudo-unreachable` 是 info 档（观察面提示，不挡门禁）。
+      const isInfo = isEntryOnly || d.code === DIAG.unreachable;
       return {
-        severity: isEntryOnly
+        severity: isInfo
           ? ("info" as const)
           : d.severity === "error"
             ? ("error" as const)

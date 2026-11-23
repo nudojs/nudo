@@ -6,7 +6,12 @@ import type { Node, Statement, ClassDeclaration, File } from "@babel/types";
 import traverse from "@babel/traverse";
 // ADR 0001 阶段 1 · 切片 2：service 普查面只读消费 core 的绑定索引。
 // 方向 service → core/internal 已允许（kernel-merge.md「绑定索引层」）。
-import { buildSemanticIndex, semanticIndexShadowActive } from "@nudojs/core/internal";
+import {
+  buildSemanticIndex,
+  literalConstValuesOf,
+  memberKeyNameOf,
+  semanticIndexShadowActive,
+} from "@nudojs/core/internal";
 import {
   type Abs,
   type Environment,
@@ -150,32 +155,6 @@ export function fnNameLoc(node: Node, fallback: SourceLocation): SourceLocation 
 
 export function isFnExprValue(node: Node | null | undefined): node is Node {
   return !!node && (node.type === "FunctionExpression" || node.type === "ArrowFunctionExpression");
-}
-
-/**
- * 类方法键名（Bug 105）：Identifier（非计算）/ 字符串字面量 / 数字字面量 /
- * 静态计算字面键都返回稳定名；动态计算键（`[k]()`）⇒ undefined。
- *
- * service 普查此前用 parser 的 `classInstanceMethods`（只认 Identifier 键）
- * ⇒ 字符串 / 计算 / 数字键方法在 `nudo test` / `export` / `contract` 三个面
- * 全盲；core 的 `listTopFunctions` 已放宽到同一口径，此处对齐。
- */
-function classMethodKeyNameOf(member: Node | null | undefined): string | undefined {
-  const m = member as
-    | {
-        key?: { type?: string; name?: string; value?: unknown } | null;
-        computed?: boolean;
-      }
-    | null
-    | undefined;
-  const k = m?.key;
-  if (!k) return undefined;
-  if (k.type === "Identifier") {
-    return m?.computed === true || typeof k.name !== "string" ? undefined : k.name;
-  }
-  if (typeof k.value === "string") return k.value;
-  if (typeof k.value === "number") return String(k.value);
-  return undefined;
 }
 
 export function namedFnExprId(node: Node): string | null {
@@ -357,6 +336,8 @@ export function collectTopLevelFunctions(
   const results: { name: string; node: Node; stmt: Node; noDeclaration: boolean; assignedName?: string }[] = [];
   if (ast.type !== "File") return results;
   const body = programBody(ast);
+  // BUG-385：`const k = "dyn"` 这类稳定字面量绑定 ⇒ 类计算键可定名。
+  const literalConsts = literalConstValuesOf(body);
   const localObjects = localObjectLiteralsOf(ast);
   /** `export { api }` / `export default api` ⇒ 本地对象成员也是公共入口 */
   const exportedObjectNames = new Set<string>();
@@ -420,7 +401,7 @@ export function collectTopLevelFunctions(
       }
       if (m.kind && m.kind !== "method") continue;
       // Bug 105：字符串 / 静态计算 / 数字键方法与 Identifier 键同口径
-      const keyName = classMethodKeyNameOf(member);
+      const keyName = memberKeyNameOf(member, literalConsts);
       const methodNode = methodFunctionNode(member);
       if (keyName === undefined || !methodNode) continue;
       out.push({ name: keyName, node: methodNode, isStatic: m.static === true });

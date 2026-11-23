@@ -15,7 +15,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { abs as makeAbs, num, runTranspiled, formatShape, type Abs } from "@nudojs/core";
-import { absToTSType } from "../dts-generator.ts";
+import { absToDtsTypeText as absToTSType } from "../dts-type.ts";
 import { absToSchemaNode } from "../schema-generator.ts";
 import { generateGuardFunctionFromAbs } from "../guard-generator.ts";
 import { serializeCaseArg } from "../case-emitter.ts";

@@ -47,6 +47,7 @@ import {
   mockFromErrorIssues,
   openDiskCache,
   resolveModule,
+  SYNTAX_ERROR_CODE,
   typeAnnotationSourceOf,
   type CallRecord,
   type MockFromError,
@@ -312,7 +313,7 @@ export type GateFlagsChannel = {
   injectionSetupFailed?: boolean;
   syntaxPathErrors?: Array<{
     path: string;
-    code: "syntax-error" | typeof DIAG.pathIo;
+    code: typeof SYNTAX_ERROR_CODE | typeof DIAG.pathIo;
     message: string;
     suggestion: string;
   }>;
@@ -1076,7 +1077,7 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
         // 旧实现只有 --json 与人类块两个分支 ⇒ 两个 CI 机器通道完全静默。
         const hardError: CiHardError = {
           path: filePath,
-          code: "syntax-error",
+          code: SYNTAX_ERROR_CODE,
           message: `${syntax.line}:${syntax.column + 1} — syntax error: ${syntax.essence}`,
           line: syntax.line,
           column: syntax.column,
@@ -1088,7 +1089,7 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
           const flags = (opts.gateFlags ??= {});
           (flags.syntaxPathErrors ??= []).push({
             path: filePath,
-            code: "syntax-error",
+            code: SYNTAX_ERROR_CODE,
             message: hardError.message,
             suggestion: syntaxSuggestion,
           });

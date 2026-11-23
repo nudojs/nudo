@@ -72,7 +72,7 @@ describe("类别 08 · 产物落盘与文件集合", () => {
     const r = runCli(["export", join(dir, "m.js"), "--format", "all", "--out", out]);
     expect(r.status).toBe(0);
     expect(r.stdout).not.toContain("No exported declarations found");
-    expect(readIfExists(join(out, "m.d.ts"))).toContain("export declare const VERSION: number");
+    expect(readIfExists(join(out, "m.d.ts"))).toContain("export declare const VERSION: 1");
   });
 
   it("显式扩展名源按 TS 解析口径落 .d.mts / .d.cts", () => {

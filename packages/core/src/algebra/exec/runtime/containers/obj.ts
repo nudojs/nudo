@@ -15,7 +15,7 @@
  *   被调用（副作用发生），rest 槽落 getter 的**返回值**（非占位 undefined）。
  */
 import type { Abs, Shape } from "../../../abs.ts";
-import { abs, confJoin, litValue, unknown, isAbsLike } from "../../../abs.ts";
+import { abs, cloneAbsFacets, confJoin, litValue, unknown, isAbsLike } from "../../../abs.ts";
 import {
   joinAbs,
   objOf,
@@ -308,6 +308,10 @@ function copyWithMemo(a: Abs, memo: WeakMap<object, Abs>): Abs {
     // 污染（issue #120 的 lazy 递归模板实测暴露）。
     next.term = a.term;
     next.pred = a.pred;
+    // 观察面 facet（provenance / 集合身份 / 生成器元素域）随快照整包搬运。
+    // 导出桥的实参隔离走本函数；丢 facets 会让 `[...m]` 的 Map 身份在
+    // 被调函数内消失（BUG-401）。
+    if (a.facets !== undefined) next.facets = cloneAbsFacets(a.facets);
     migrateAccessors(a, next);
     migrateInvariants(a, next);
     migrateNullProto(a, next);

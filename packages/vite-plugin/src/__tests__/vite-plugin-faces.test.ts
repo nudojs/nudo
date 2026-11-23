@@ -1951,9 +1951,9 @@ export class A { x = 1; }
         },
       });
 
-      // 解析失败 ⇒ 插件兜底 catch ⇒ 一条 warn；**绝不**红构建
+      // TS 5 标准装饰器是合法语法（BUG-376）⇒ 解析成功，不应有兜底 warn。
       await expect(buildPromise).resolves.toBeTruthy();
-      expect(warnings.join("\n")).toContain("Failed to analyze");
+      expect(warnings.join("\n")).not.toContain("Failed to analyze");
   }
 });
 

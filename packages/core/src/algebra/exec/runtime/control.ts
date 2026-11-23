@@ -760,6 +760,35 @@ function beginSwitchArms(): {
   };
 }
 
+/**
+ * BUG-366：无 default 的**穷尽字面量 switch**。
+ *
+ * 判别式是有限字面量域（`"a" | "b"` / `1 | 2`）且每个成员都被某个
+ * **字面量 case 测试**覆盖 ⇒ no-match 臂不可达，不得把 `undefined` 并入
+ * 返回域。case 测试不是字面量（`case f():`）⇒ 不可证明，返回 false。
+ */
+function literalCaseCoverage(
+  disc: Abs,
+  cases: Array<{ test: Abs; run: () => Abs }>,
+): boolean {
+  const members = disc.shape.k === "sum" ? disc.shape.members : [disc];
+  if (members.length === 0) return false;
+  const domain: unknown[] = [];
+  for (const m of members) {
+    const v = litValue(m);
+    if (!v.ok) return false;
+    domain.push(v.value);
+  }
+  const tests: unknown[] = [];
+  for (const c of cases) {
+    const v = litValue(c.test);
+    if (!v.ok) return false;
+    tests.push(v.value);
+  }
+  // switch 匹配是严格相等（NaN 不匹配 NaN）⇒ 用 === 而非 Object.is。
+  return domain.every((d) => tests.some((t) => t === d));
+}
+
 export function $switch(
   disc: Abs,
   cases: Array<{ test: Abs; run: () => Abs }>,
@@ -797,12 +826,13 @@ export function $switch(
     }
     if (dflt) {
       if (!seenRuns.has(dflt)) results.push(runArm(dflt));
-    } else {
+    } else if (!literalCaseCoverage(disc, cases)) {
       // 隐式 no-match 臂：全 case 不命中时 fall-through（P0-2）。
       // N5：隐式臂也是替代路径（同 $fork 隐式 else）——executor 内必须占
       // settle 臂 token，否则抽象 disc 全不命中路径被静默丢弃
       // collectYields:false（同 $fork 隐式 else 记 null）——隐式臂无 yield，
-      // 不得让它的空收集器把单臂 switch 翻成多臂 join（元素类型降 unknown）
+      // 不得让它的空收集器把单臂 switch 翻成多臂 join（元素类型降 unknown）。
+      // BUG-366：有限字面量域被字面量 case 全覆蓋时 no-match 不可达 ⇒ 不加。
       results.push(runArm(() => undef(), { collectYields: false }));
     }
   } finally {

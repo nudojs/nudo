@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
+import { sigOf } from "./nudo-constraints.ts";
+import { DIAG } from "../diagnostics/diag-codes.ts";
+import { checkIssuesFromDiagnostics } from "../check/check-report.ts";
 
 /**
  * 回归：OSS 语料 semver/bin/semver.js L109 的 L1 FP（2026-10-03 main 红）。
@@ -70,6 +73,128 @@ describe("check: loop push-join binding reassigned to filter result (semver shap
       ].join("\n"),
     );
     expect(codes).toEqual([]);
+  });
+
+  it("类型谓词回调 / tuple filter / keyof 下标 / 可选调用 / hasOwn 可选槽的结果域", () => {
+    const r = checkSource(
+      "/t/hof-optional.ts",
+      `export function filterNums(xs: (number | string)[]) {
+  return xs.filter((x): x is number => typeof x === "number");
+}
+export function findNum(xs: (number | string)[]) {
+  return xs.find((x): x is number => typeof x === "number");
+}
+export function filterTuple(t: [number, string]) {
+  const kept = t.filter((x): x is number => typeof x === "number");
+  return kept[5];
+}
+export function pickKey(o: { a: number; b: string }, k: keyof { a: number; b: string }) {
+  return o[k];
+}
+export function optDirect(o: { m?: () => number }) {
+  return o.m?.();
+}
+export function hasOpt(o: { a?: number }) {
+  return Object.hasOwn(o, "a");
+}
+`,
+      pTrue,
+    );
+    expect(sigOf(r, "filterNums")).toBe("number[]");
+    expect(sigOf(r, "findNum")).toBe("number | undefined");
+    expect(sigOf(r, "filterTuple")).toMatch(/number/);
+    expect(sigOf(r, "pickKey")).toBe("number | string");
+    expect(sigOf(r, "optDirect")).toBe("undefined | number");
+    expect(sigOf(r, "hasOpt")).toBe("boolean");
+    expect(r.summary.errors).toBe(0);
+  });
+
+  it("局部声明注解 / new Array<T> / namespace 运行时对象", () => {
+    const r = checkSource(
+      "/t/decl-array-ns.ts",
+      `export function local(): string { let x: string | number = 1; x = "abcd"; return x; }
+export function newArr(): number[] { return new Array<number>(3).fill(0); }
+export namespace NS {
+  export const x = 1;
+  export function f(): number { return 2; }
+}
+export function nsX(): number { return NS.x; }
+export function useNS(): number { return NS.f(); }
+`,
+      pTrue,
+    );
+    expect(r.summary.errors).toBe(0);
+    expect(sigOf(r, "local")).toBe('"abcd"');
+    // type args 已播种元素域：`fill(0)` 观测到字面量 0（不再 undefined）。
+    expect(sigOf(r, "newArr")).toBe("0[]");
+    expect(sigOf(r, "nsX")).toBe("1");
+    expect(sigOf(r, "useNS")).toBe("2");
+  });
+
+  it("require(node 内建) 与 path 族实参执法：非字面量 string 实参不记假 TypeError", () => {
+    const builtin = checkSource(
+      "/t/require-builtin.ts",
+      `export function joinPath() { return require("path").join("a", "b"); }
+`,
+      pTrue,
+    );
+    expect(builtin.summary.errors).toBe(0);
+    expect(sigOf(builtin, "joinPath")).toBe("unknown");
+    // 真缺失仍然是 Error（不得被内建白名单吞掉）。
+    const missing = checkSource(
+      "/t/require-missing.ts",
+      `export function missing() { return require("./definitely-missing"); }
+`,
+      pTrue,
+    );
+    expect(missing.summary.errors).toBeGreaterThan(0);
+    expect(sigOf(missing, "missing")).toMatch(/throws Error/);
+
+    const paths = checkSource(
+      "/t/path-args.ts",
+      `/// @nudo:env node
+export function dir1(s: string): string { return require("path").dirname(s); }
+export function ext1(s: string): string { return require("path").extname(s); }
+export function norm1(s: string): string { return require("path").normalize(s); }
+export function base1(s: string): string { return require("path").basename(s); }
+export function join2(a: string, b: string): string { return require("path").join(a, b); }
+export function parseBase(s: string): string { return require("path").parse(s).base; }
+`,
+      pTrue,
+    );
+    expect(paths.summary.errors).toBe(0);
+    for (const name of ["dir1", "ext1", "norm1", "base1", "join2", "parseBase"]) {
+      expect(sigOf(paths, name), name).not.toMatch(/throws/);
+    }
+  });
+
+  it("独立 nullish 形参注解在签名面印 nullish 名字，不是 true unknown", () => {
+    const r = checkSource(
+      "/t/nullish-sig.ts",
+      `export function u(x: undefined): void {}
+export function n(x: null): void {}
+export function un(x: string | undefined): void {}
+`,
+      pTrue,
+    );
+    const sig = (name: string) => r.signatures.find((s) => s.name === name)?.paramTypes?.[0];
+    expect(sig("u")).toBe("undefined");
+    expect(sig("n")).toBe("null");
+    expect(sig("un")).toBe("string | undefined");
+  });
+
+  it("check 面可见 nudo-unreachable，且档位为 info（不挡门禁）", () => {
+    const issues = checkIssuesFromDiagnostics([
+      {
+        range: { start: { line: 0, column: 0 } },
+        severity: "info",
+        message: "Code after return/throw statement is unreachable",
+        code: DIAG.unreachable,
+      },
+    ]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]!.code).toBe("nudo-unreachable");
+    expect(issues[0]!.severity).toBe("info");
   });
 
   it("filter reassignment still flags genuinely incompatible element rewrite", () => {

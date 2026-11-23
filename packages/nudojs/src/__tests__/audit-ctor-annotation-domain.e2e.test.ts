@@ -96,7 +96,7 @@ describe("构造器注解即实例字段域", () => {
     expect(sigOf(r.sigs, "C")?.paramTypes).toEqual(["any"]);
   }, 60000);
 
-  it("对照：注解不可映射（私有类类型）⇒ 实参仍是 any（不猜）", () => {
+  it("私有类类型进入实例域（BUG-403），不再回落 any", () => {
     const dir = fixture({
       "o.ts": [
         "class Hidden { x = 1; }",
@@ -105,7 +105,7 @@ describe("构造器注解即实例字段域", () => {
       ].join("\n"),
     });
     const r = check(dir, "o.ts");
-    expect(sigOf(r.sigs, "C")?.paramTypes).toEqual(["any"]);
+    expect(sigOf(r.sigs, "C")?.paramTypes).toEqual(["{ x: any }"]);
   }, 60000);
 
   it("反向：注解 number 却调 `.toUpperCase()` ⇒ 真实 TypeError 不被吞", () => {

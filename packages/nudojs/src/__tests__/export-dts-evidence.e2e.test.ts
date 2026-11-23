@@ -193,7 +193,7 @@ describe("export dts — 模块级全局增强面（declare global / ambient nam
     expect(r.stdout).toContain("NUDO_MODE?: string;");
     // 同一份文件的具名导出仍然照旧镜像
     expect(r.stdout).toContain("export interface Local {");
-    expect(r.stdout).toContain("export declare const marker: number;");
+    expect(r.stdout).toContain("export declare const marker: 1;");
   }, 30000);
 });
 

@@ -963,7 +963,16 @@ function makeTextEncoderAbs(): Abs {
 }
 
 /** new C(...) → brand 实例 + ctor 写字段；非类构造走 impl/$call */
-export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Abs {
+export function $new(
+  cls: Abs | ((...a: unknown[]) => unknown),
+  args: Abs[],
+  typeHint?: Abs,
+): Abs {
+  // BUG-368：host 面的 `Array` 是原生函数（非 Abs）⇒ 类型实参提示在
+  // 宿主分支会被丢掉。按名折叠到同一构造器模型。
+  if (typeHint && typeof cls === "function" && cls.name === "Array") {
+    return makeArrayCtorAbs(args, typeHint);
+  }
   // Bug 932 顺带清理：具名导入物化不再把 fn Abs 包成 JS 箭头 wrapper
   // （bindImport 原样直出声明 Abs）⇒ `__nudoAbsFn` 回读已无生产方（死代码）。
   // Abs 一等函数在两条调用面原生可派发（标识符调用走 $callNamed 的 Abs
@@ -1045,7 +1054,7 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
       // 恒假。身份判定（不用裸名查注册表）⇒ 内建 Abs 不受跨 run 同名用户
       // 类污染。
       if (!isDeclaredClassValue(cls as object)) {
-        const built = evalBuiltinNew(ctorName, args);
+        const built = evalBuiltinNew(ctorName, args, typeHint);
         if (built !== undefined) return built;
       }
     }

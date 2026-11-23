@@ -42,10 +42,17 @@ const astCache = new Map<string, File>();
  * 未必知道被解析物的扩展名 ⇒ 不得凭猜测收紧（收紧只由**知道扩展名**的
  * 入口做，见 `parseSource` 的 `filename` 选项）。
  */
-type ParsePlugin = "typescript" | "jsx";
+type ParsePlugin =
+  | "typescript"
+  | "jsx"
+  | "decoratorAutoAccessors"
+  | "decorators";
 type ParseMode = "ts" | "js";
 const PLUGINS_BY_MODE: Record<ParseMode, readonly ParsePlugin[]> = {
-  ts: ["typescript", "jsx"],
+  // Bug 376：TS 4.9 `accessor` 与 TS 5 标准装饰器都是合法 TS，Babel 默认
+  // 不开启对应插件 ⇒ 整文件硬解析失败。标准装饰器（非 legacy）与 tsc 5+
+  // 默认语义一致，且同时接受 `@dec export class` / `export @dec class`。
+  ts: ["typescript", "jsx", "decoratorAutoAccessors", "decorators"],
   js: ["jsx"],
 };
 

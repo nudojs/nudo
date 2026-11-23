@@ -5647,12 +5647,13 @@ export function g(): number { return E.A; }`,
     expect(sigOf(en, "g")).toBe("1");
   });
 
-  it("对照：裸 namespace（无合并）仍发 opaque 绑定 `const N = $unknown()`（既有精度口径不变）；同名 namespace 重复声明只发一次（改前：重复词法声明 ⇒ 整模块 fail-closed）", () => {
+  it("裸 namespace 发运行时对象（BUG-369）；同名 namespace 重复声明只发一次（改前：重复词法声明 ⇒ 整模块 fail-closed）", () => {
     const bare = transpileSource(
       `export namespace N { export const v = 1; }`,
       { target: "host", runtimeImport: null, filename: "/t/bare.ts" },
     );
-    expect(bare).toContain("const N = $unknown();");
+    expect(bare).toContain("const N = (() =>");
+    expect(bare).toContain("$obj(");
 
     const twice = transpileSource(
       `export namespace M { export const a = 1; }
@@ -5660,7 +5661,7 @@ export namespace M { export const b = 2; }
 export function probe(): number { return 1; }`,
       { target: "host", runtimeImport: null, filename: "/t/twice.ts" },
     );
-    expect(twice.split("const M = $unknown();").length - 1).toBe(1);
+    expect(twice.split("const M = (() =>").length - 1).toBe(1);
     expect(call("export namespace M { export const a = 1; }\nexport namespace M { export const b = 2; }\nexport function probe() { return 1; }", "probe").result.shape.k).not.toBe("never");
   });
 });

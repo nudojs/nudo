@@ -216,6 +216,98 @@ describe("注解解析差分矩阵：nudo dts ≡ tsc dts", () => {
     }
   });
 
+  it("tsconfig extends：继承的 `@m/*` 按 baseUrl 解析；子配置覆盖 baseUrl 时继承 paths 仍生效；无 baseUrl 时相对声明 paths 的配置目录", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-tsconfig-extends-"));
+    try {
+      mkdirSync(join(dir, "base", "types"), { recursive: true });
+      writeFileSync(
+        join(dir, "base", "tsconfig.base.json"),
+        JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@m/*": ["types/*"] } } }),
+      );
+      writeFileSync(join(dir, "base", "types", "opts.ts"), "export interface Opts { a: number }\n");
+      writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ extends: "./base/tsconfig.base.json" }));
+      writeFileSync(join(dir, "lib.ts"), 'import type { Opts } from "@m/opts";\n');
+      expect(typeAnnotationSourceOf("@m/opts", join(dir, "lib.ts"))).toContain("interface Opts");
+
+      // 子配置覆盖 baseUrl：继承来的 paths 用子配置的 baseUrl 解析（与 tsc 一致）。
+      writeFileSync(
+        join(dir, "tsconfig.json"),
+        JSON.stringify({ extends: "./base/tsconfig.base.json", compilerOptions: { baseUrl: "./base" } }),
+      );
+      expect(typeAnnotationSourceOf("@m/opts", join(dir, "lib.ts"))).toContain("interface Opts");
+
+      // 链上没有任何 baseUrl：相对声明 paths 的配置目录解析。
+      writeFileSync(
+        join(dir, "base", "tsconfig.base.json"),
+        JSON.stringify({ compilerOptions: { paths: { "@m/*": ["./types/*"] } } }),
+      );
+      writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ extends: "./base/tsconfig.base.json" }));
+      expect(typeAnnotationSourceOf("@m/opts", join(dir, "lib.ts"))).toContain("interface Opts");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("tsconfig extends 数组：后者覆盖前者的 paths / baseUrl", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-tsconfig-array-"));
+    try {
+      mkdirSync(join(dir, "first", "types"), { recursive: true });
+      mkdirSync(join(dir, "second", "types"), { recursive: true });
+      writeFileSync(
+        join(dir, "first", "tsconfig.json"),
+        JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@m/*": ["types/*"] } } }),
+      );
+      writeFileSync(join(dir, "first", "types", "opts.ts"), 'export interface Opts { from: "first" }\n');
+      writeFileSync(
+        join(dir, "second", "tsconfig.json"),
+        JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@m/*": ["types/*"] } } }),
+      );
+      writeFileSync(join(dir, "second", "types", "opts.ts"), 'export interface Opts { from: "second" }\n');
+      writeFileSync(
+        join(dir, "tsconfig.json"),
+        JSON.stringify({ extends: ["./first/tsconfig.json", "./second/tsconfig.json"] }),
+      );
+      writeFileSync(join(dir, "lib.ts"), 'import type { Opts } from "@m/opts";\n');
+      expect(typeAnnotationSourceOf("@m/opts", join(dir, "lib.ts"))).toContain('from: "second"');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("tsconfig paths 通配优先级：`@app/*` 胜过前置的 `*`（最长前缀优先，不按插入序）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-tsconfig-priority-"));
+    try {
+      mkdirSync(join(dir, "types"), { recursive: true });
+      mkdirSync(join(dir, "fallback"), { recursive: true });
+      writeFileSync(
+        join(dir, "tsconfig.json"),
+        JSON.stringify({
+          compilerOptions: {
+            baseUrl: ".",
+            paths: { "*": ["fallback/*"], "@app/*": ["types/*"] },
+          },
+        }),
+      );
+      writeFileSync(join(dir, "types", "opts.ts"), "export interface Opts { from: \"types\" }\n");
+      writeFileSync(join(dir, "fallback", "opts.ts"), "export interface Opts { from: \"fallback\" }\n");
+      writeFileSync(join(dir, "lib.ts"), 'import type { Opts } from "@app/opts";\n');
+      expect(typeAnnotationSourceOf("@app/opts", join(dir, "lib.ts"))).toContain('from: "types"');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("相对 import 的 `.js` specifier 映射到 `.ts`（NodeNext / bundler 写法）", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-js-specifier-"));
+    try {
+      writeFileSync(join(dir, "types.ts"), "export interface Opts { a: number }\n");
+      writeFileSync(join(dir, "lib.ts"), 'import type { Opts } from "./types.js";\n');
+      expect(typeAnnotationSourceOf("./types.js", join(dir, "lib.ts"))).toContain("interface Opts");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("声明来源的字面量在 zod / guard / standard 面保真", () => {
     const arg = tsAnnotationArgAbs('"a" | "b"');
     expect(provenanceOf(arg)).toBe("declared");

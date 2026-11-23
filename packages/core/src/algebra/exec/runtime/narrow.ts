@@ -18,7 +18,7 @@
  * 本文件不依赖 async / generator 机制（单向：runtime/async.ts 与
  * runtime.ts 只做转出）；新增 narrow 算子放这里，不要回填 async.ts。
  */
-import type { Abs } from "../../abs.ts";
+import type { Abs, Shape } from "../../abs.ts";
 import { abs, bool, boolLit, isNumPrim, numLit, strLit, isAbsLike, withProvenance, provenanceOf, type Provenance } from "../../abs.ts";
 import { lit, termEquals } from "../../term.ts";
 import { pTrue, and, ne, implies, REL_COMPLEMENT_OPS, type Pred, type PrimName } from "../../pred.ts";
@@ -29,6 +29,7 @@ import { accessorTable, migrateAccessors } from "../../accessors.ts";
 import { leqAbs } from "../../leq.ts";
 import { isNullishLitAbs, definitelyNotNullishShape, typeofName } from "../../surface.ts";
 import { currentExecPhi } from "./phi.ts";
+import { getEvalClass } from "../class-registry.ts";
 
 /**
  * BUG-354：局部声明（`let x: T = init`）的**声明域播种**。
@@ -374,6 +375,88 @@ export function $narrowIn(a: Abs, key: string, keep: boolean): Abs {
     if (keep) return present ? m : null;
     return present ? null : m;
   });
+}
+
+/**
+ * `Array.isArray(x)` 守卫臂剪影（BUG-375）。
+ *
+ * 事实臂只保留 arr/tuple 成员（any/unknown 窄化为 `any[]` / `unknown[]`）；
+ * 补集臂剪掉数组成员。全剪空 / 单形态不可剪 ⇒ 原样返回（臂不可达的保守
+ * 近似，与其它剪影同口径）。
+ */
+export function $narrowArray(a: Abs, keep: boolean): Abs {
+  if (!isAbsLike(a)) return a;
+  const isArrMember = (m: Abs): boolean => m.shape.k === "arr" || m.shape.k === "tuple";
+  if (a.shape.k === "sum") {
+    return filterSumMembers(a, (m) => {
+      const isArr = isArrMember(m);
+      return keep ? (isArr ? m : null) : isArr ? null : m;
+    });
+  }
+  if (keep && (a.shape.k === "any" || a.shape.k === "unknown")) {
+    // TS：`Array.isArray(x)` 的真臂把 any 窄成 any[]；unknown 亦成为数组。
+    return abs(
+      { k: "arr", element: abs({ k: a.shape.k }, undefined, undefined, "path") },
+      a.term,
+      a.pred,
+      a.conf,
+    );
+  }
+  return a;
+}
+
+/** 类名链是否包含 `name`（用户类 + 内建直接名）。 */
+function classChainHas(className: string, name: string): boolean {
+  if (className === name) return true;
+  const seen = new Set<string>([className]);
+  let cur = getEvalClass(className)?.superName;
+  while (cur !== undefined && !seen.has(cur)) {
+    if (cur === name) return true;
+    seen.add(cur);
+    cur = getEvalClass(cur)?.superName;
+  }
+  return false;
+}
+
+/** 用户类实例 Abs（字段初始化器按 `this` 求值；构造器副作用不执行）。 */
+function classInstanceAbsOf(name: string): Abs | undefined {
+  const spec = getEvalClass(name);
+  if (!spec) return undefined;
+  const inner = abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "path");
+  const inst = abs({ k: "brand", name, shape: inner }, undefined, undefined, "path");
+  const slots = (inner.shape as Extract<Shape, { k: "obj" }>).slots;
+  for (const f of spec.instanceFields ?? []) {
+    if (!f.name) continue;
+    try {
+      slots[f.name] = { value: f.init(inst) };
+    } catch {
+      // 字段初始化依赖构造实参 / 抛错 ⇒ 不播种该槽（保守）。
+    }
+  }
+  return inst;
+}
+
+/**
+ * `x instanceof A` 守卫臂剪影（BUG-372）。
+ *
+ * sum：事实臂保留 A（含子类）实例成员，补集臂剪掉；any/unknown 事实臂
+ * 窄化为 A 的实例面（字段初始化器可静态求值时）。无类规格 / 不可剪形态
+ * ⇒ 原样返回。
+ */
+export function $narrowInstanceof(a: Abs, name: string, keep: boolean): Abs {
+  if (!isAbsLike(a)) return a;
+  const matches = (m: Abs): boolean =>
+    m.shape.k === "brand" && classChainHas(m.shape.name, name);
+  if (a.shape.k === "sum") {
+    return filterSumMembers(a, (m) => {
+      const hit = matches(m);
+      return keep ? (hit ? m : null) : hit ? null : m;
+    });
+  }
+  if (keep && (a.shape.k === "any" || a.shape.k === "unknown")) {
+    return classInstanceAbsOf(name) ?? a;
+  }
+  return a;
 }
 
 /**

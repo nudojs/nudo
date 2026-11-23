@@ -1,0 +1,97 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`dts 类型 IR 快照 > brand：内建泛型 / Arguments 别名；用户类回落 1`] = `"Map<unknown, unknown>"`;
+
+exports[`dts 类型 IR 快照 > brand：内建泛型 / Arguments 别名；用户类回落 2`] = `"Set<unknown>"`;
+
+exports[`dts 类型 IR 快照 > brand：内建泛型 / Arguments 别名；用户类回落 3`] = `"Array<unknown>"`;
+
+exports[`dts 类型 IR 快照 > brand：内建泛型 / Arguments 别名；用户类回落 4`] = `"Promise<unknown>"`;
+
+exports[`dts 类型 IR 快照 > brand：内建泛型 / Arguments 别名；用户类回落 5`] = `"Generator<unknown>"`;
+
+exports[`dts 类型 IR 快照 > effect：promise 包装 / 非 promise 透明 1`] = `"Promise<number>"`;
+
+exports[`dts 类型 IR 快照 > effect：promise 包装 / 非 promise 透明 2`] = `"string"`;
+
+exports[`dts 类型 IR 快照 > fn：简单签名 / 可选 / rest / 数组与联合中的括号 1`] = `"(x: number) => string"`;
+
+exports[`dts 类型 IR 快照 > fn：简单签名 / 可选 / rest / 数组与联合中的括号 2`] = `"(x?: number) => string"`;
+
+exports[`dts 类型 IR 快照 > fn：简单签名 / 可选 / rest / 数组与联合中的括号 3`] = `"(...xs: number[]) => string"`;
+
+exports[`dts 类型 IR 快照 > fn：简单签名 / 可选 / rest / 数组与联合中的括号 4`] = `"(...xs: number[]) => string"`;
+
+exports[`dts 类型 IR 快照 > fn：简单签名 / 可选 / rest / 数组与联合中的括号 5`] = `"((x: number) => string)[]"`;
+
+exports[`dts 类型 IR 快照 > fn：简单签名 / 可选 / rest / 数组与联合中的括号 6`] = `"((x: number) => string) | number"`;
+
+exports[`dts 类型 IR 快照 > fn：重载集发调用签名对象 1`] = `"{ (a0: number): string; (a0: string): number }"`;
+
+exports[`dts 类型 IR 快照 > 元组：位置 / 洞 / rest 1`] = `"[1, string]"`;
+
+exports[`dts 类型 IR 快照 > 元组：位置 / 洞 / rest 2`] = `"[1, hole: undefined]"`;
+
+exports[`dts 类型 IR 快照 > 元组：位置 / 洞 / rest 3`] = `"[number, ...number[]]"`;
+
+exports[`dts 类型 IR 快照 > 基础 prim / never / unknown / any 1`] = `"number"`;
+
+exports[`dts 类型 IR 快照 > 基础 prim / never / unknown / any 2`] = `"string"`;
+
+exports[`dts 类型 IR 快照 > 基础 prim / never / unknown / any 3`] = `"unknown"`;
+
+exports[`dts 类型 IR 快照 > 基础 prim / never / unknown / any 4`] = `"never"`;
+
+exports[`dts 类型 IR 快照 > 基础 prim / never / unknown / any 5`] = `"unknown"`;
+
+exports[`dts 类型 IR 快照 > 契约字面量槽：eq(self, lit) → 字面量类型 1`] = `"{ k: "n" }"`;
+
+exports[`dts 类型 IR 快照 > 字面量：字符串 / 数字 / 布尔 / null / undefined / 非有限数 1`] = `"1"`;
+
+exports[`dts 类型 IR 快照 > 字面量：字符串 / 数字 / 布尔 / null / undefined / 非有限数 2`] = `"1.5"`;
+
+exports[`dts 类型 IR 快照 > 字面量：字符串 / 数字 / 布尔 / null / undefined / 非有限数 3`] = `"number"`;
+
+exports[`dts 类型 IR 快照 > 字面量：字符串 / 数字 / 布尔 / null / undefined / 非有限数 4`] = `""a""`;
+
+exports[`dts 类型 IR 快照 > 字面量：字符串 / 数字 / 布尔 / null / undefined / 非有限数 5`] = `"true"`;
+
+exports[`dts 类型 IR 快照 > 字面量：字符串 / 数字 / 布尔 / null / undefined / 非有限数 6`] = `"null"`;
+
+exports[`dts 类型 IR 快照 > 字面量：字符串 / 数字 / 布尔 / null / undefined / 非有限数 7`] = `"undefined"`;
+
+exports[`dts 类型 IR 快照 > 对象：简单槽 / 可选 / 只读 / 空对象 1`] = `"{ a: number; b?: string; readonly c: 1 }"`;
+
+exports[`dts 类型 IR 快照 > 对象：简单槽 / 可选 / 只读 / 空对象 2`] = `"{ a: number }"`;
+
+exports[`dts 类型 IR 快照 > 数组：prim / union 元素 1`] = `"number[]"`;
+
+exports[`dts 类型 IR 快照 > 数组：prim / union 元素 2`] = `"(number | string)[]"`;
+
+exports[`dts 类型 IR 快照 > 生成器 / 迭代器协议对象 1`] = `"Generator<number>"`;
+
+exports[`dts 类型 IR 快照 > 生成器 / 迭代器协议对象 2`] = `"IterableIterator<number>"`;
+
+exports[`dts 类型 IR 快照 > 生成器 / 迭代器协议对象 3`] = `"AsyncGenerator<number>"`;
+
+exports[`dts 类型 IR 快照 > 用户符号队列 / internal 槽跳过 1`] = `"{ a: number }"`;
+
+exports[`dts 类型 IR 快照 > 符号成员 / 访问器 / 数组视图伴生槽 / contract or 1`] = `"{ [Symbol.iterator](): number; [Symbol.toStringTag]: string }"`;
+
+exports[`dts 类型 IR 快照 > 符号成员 / 访问器 / 数组视图伴生槽 / contract or 2`] = `"{ x: number }"`;
+
+exports[`dts 类型 IR 快照 > 符号成员 / 访问器 / 数组视图伴生槽 / contract or 3`] = `"[1] & { index: 0 }"`;
+
+exports[`dts 类型 IR 快照 > 符号成员 / 访问器 / 数组视图伴生槽 / contract or 4`] = `"{ k: "a" | "b" }"`;
+
+exports[`dts 类型 IR 快照 > 类型变量映射 / 对象方法返回注解 / symbol 返回注解 1`] = `"{ f: (x: number) => string }"`;
+
+exports[`dts 类型 IR 快照 > 索引签名 / 纯数组视图 / 模板字面量 1`] = `"{ a: number; [key: string]: number }"`;
+
+exports[`dts 类型 IR 快照 > 索引签名 / 纯数组视图 / 模板字面量 2`] = `"{ [key: string]: number }"`;
+
+exports[`dts 类型 IR 快照 > 索引签名 / 纯数组视图 / 模板字面量 3`] = `"[1, string]"`;
+
+exports[`dts 类型 IR 快照 > 索引签名 / 纯数组视图 / 模板字面量 4`] = `"\`id-\${number}\`"`;
+
+exports[`dts 类型 IR 快照 > 联合：去重 / 丢弃 never 1`] = `"number | string"`;

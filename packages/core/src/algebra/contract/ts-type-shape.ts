@@ -18,7 +18,10 @@
  *   映射它们；Shape 面（{@link absShapeForTsTypeText}）保持旧口径不映射。
  */
 import { abs, withProvenance, type Abs, type Shape } from "../abs.ts";
-import { relationFn } from "../abs-fn.ts";
+import { absFunction, relationFn } from "../abs-fn.ts";
+import { abstractSeqIteratorAbs } from "../builtins/error/iterator.ts";
+import { noBody } from "../builtins/shared.ts";
+import { $call } from "../exec/call.ts";
 import { parseSource } from "../parse-source.ts";
 import { lit, type Term } from "../term.ts";
 
@@ -193,13 +196,45 @@ function builtinGenericAbs(text: string, allowNullish: boolean): Abs | undefined
   const undef = nullishAbs(undefined);
   const method = (params: Abs[], ret: Abs, names: string[]): Abs =>
     relationFn(params, ret, { params: names });
+  // BUG-401：注解 Map/Set 也要有原生迭代协议面。返回抽象序列迭代器
+  // （元素域随 Abs 携带、长度不可知）⇒ `[...m.keys()]` 既不记假 may-throw，
+  // dts 也能从 `genElements` 投影出真实元素域。
+  const iterMethod = (el: Abs): Abs =>
+    absFunction(
+      [],
+      {
+        body: noBody,
+        // 每次调用产出新迭代器对象；元素侧表（WeakMap 身份键控）不能
+        // 经过 relation 的 α 替换复制，否则 `$elems` 读不到元素域。
+        apply: (): Abs => abstractSeqIteratorAbs(el),
+      },
+      { ctor: false, paramTypes: [], returnType: abstractSeqIteratorAbs(el) },
+    );
+  const forEachMethod = (cbArgs: Abs[], names: string[]): Abs => {
+    const cbType = relationFn(cbArgs, undef, { params: names });
+    return absFunction(
+      ["cb"],
+      {
+        body: noBody,
+        apply: (args): Abs => {
+          // 注解集合的条目域是单代表；调用一次即可让回调的副作用进入
+          // 返回位（原生多次调用的结果按抽象域 join）。
+          const cb = args[0];
+          if (cb) $call(cb, cbArgs, args[1]);
+          return undef;
+        },
+      },
+      { ctor: false, paramTypes: [cbType], returnType: undef, length: 1 },
+    );
+  };
   switch (name) {
     case "Map":
     case "ReadonlyMap": {
       const k = a0 ?? any;
       const v = a1 ?? any;
+      const entry = abs({ k: "tuple", elements: [k, v] }, undefined, undefined, "exact");
       const self = absOf({ k: "obj", slots: {}, open: true, index: { key: k, value: v } });
-      return absOf({
+      const out = absOf({
         k: "obj",
         open: true,
         index: { key: k, value: v },
@@ -210,8 +245,18 @@ function builtinGenericAbs(text: string, allowNullish: boolean): Abs | undefined
           delete: { value: method([k], bool, ["key"]) },
           clear: { value: method([], self, []) },
           size: { value: num, readonly: true },
+          keys: { value: iterMethod(k) },
+          values: { value: iterMethod(v) },
+          entries: { value: iterMethod(entry) },
+          forEach: { value: forEachMethod([v, k, self], ["value", "key", "map"]) },
+          "@@iterator": { value: iterMethod(entry), symbolKey: true },
         },
       });
+      // BUG-401：`$elems` / dts 的集合身份面。obj 形状保留方法建模，
+      // facets.brand 让 spread 的元素域走条目表，而不是用户迭代器协议的
+      // 「done 不可判 ⇒ unknown」兜底。
+      out.facets = { ...(out.facets ?? {}), brand: "Map", genElements: [entry] };
+      return out;
     }
     case "WeakMap": {
       const k = a0 ?? absOf({ k: "obj", slots: {}, open: true });
@@ -230,8 +275,9 @@ function builtinGenericAbs(text: string, allowNullish: boolean): Abs | undefined
     case "Set":
     case "ReadonlySet": {
       const v = a0 ?? any;
+      const entry = abs({ k: "tuple", elements: [v, v] }, undefined, undefined, "exact");
       const self = absOf({ k: "obj", slots: {}, open: true });
-      return absOf({
+      const out = absOf({
         k: "obj",
         open: true,
         slots: {
@@ -240,8 +286,15 @@ function builtinGenericAbs(text: string, allowNullish: boolean): Abs | undefined
           delete: { value: method([v], bool, ["value"]) },
           clear: { value: method([], self, []) },
           size: { value: num, readonly: true },
+          keys: { value: iterMethod(v) },
+          values: { value: iterMethod(v) },
+          entries: { value: iterMethod(entry) },
+          forEach: { value: forEachMethod([v, v, self], ["value", "key", "set"]) },
+          "@@iterator": { value: iterMethod(v), symbolKey: true },
         },
       });
+      out.facets = { ...(out.facets ?? {}), brand: "Set", genElements: [v] };
+      return out;
     }
     case "WeakSet": {
       const v = a0 ?? absOf({ k: "obj", slots: {}, open: true });
@@ -359,6 +412,131 @@ function objectKeyOf(raw: string): { key: string; optional: boolean } | undefine
 const namedTypeTextMemo = new Map<string, ReadonlyMap<string, string>>();
 const NAMED_TYPE_TEXT_MEMO_MAX = 8;
 
+type AstNode = Record<string, unknown> & { start?: number; end?: number; type?: string };
+
+function nodeTextOf(source: string, node: AstNode | undefined): string | undefined {
+  if (typeof node?.start !== "number" || typeof node.end !== "number") return undefined;
+  return source.slice(node.start, node.end);
+}
+
+function classMemberKeyText(key: AstNode | undefined): string | undefined {
+  if (!key) return undefined;
+  if (key.type === "Identifier") return typeof key.name === "string" ? key.name : undefined;
+  if (key.type === "StringLiteral") return JSON.stringify(key.value);
+  if (key.type === "NumericLiteral") return String(key.value);
+  return undefined;
+}
+
+function classMethodParamText(source: string, raw: AstNode): string | undefined {
+  const p = raw.type === "TSParameterProperty" ? (raw.parameter as AstNode | undefined) : raw;
+  if (!p || p.type === "Identifier" && p.name === "this") return undefined;
+  let text = nodeTextOf(source, p);
+  if (!text) return undefined;
+  // 默认值不属于类型签名：`x: number = 1` ⇒ `x?: number`。
+  const eq = text.indexOf("=");
+  if (eq >= 0) {
+    text = text.slice(0, eq).trim();
+    if (!text.endsWith("?")) {
+      const colon = text.indexOf(":");
+      text = colon >= 0 ? `${text.slice(0, colon)}?${text.slice(colon)}` : `${text}?`;
+    }
+  }
+  return text;
+}
+
+/**
+ * BUG-403：类声明的**实例类型**（同文件具名类型表）。
+ *
+ * 只收实例成员（static 不入）；方法按对象字面量方法签名 `m(x: T): R`
+ * 发布——对象文本映射器已支持该形态（BUG-288）。继承成员暂不展开；
+ * 需要基类时调用方的导入表 / 类型文本解析会另行补面。
+ */
+function classInstanceTypeText(source: string, stmt: AstNode): string | undefined {
+  const body = stmt.body as { body?: AstNode[] } | undefined;
+  if (!Array.isArray(body?.body)) return undefined;
+  const members: string[] = [];
+  for (const m of body.body) {
+    if (m.static === true) continue;
+    const key = classMemberKeyText(m.key as AstNode | undefined);
+    if (!key) continue;
+    const optional = m.optional === true ? "?" : "";
+    const ann = nodeTextOf(source, m.typeAnnotation as AstNode | undefined)?.replace(/^\s*:\s*/, "");
+    if (m.type === "ClassProperty" || m.type === "ClassAccessorProperty") {
+      members.push(`${key}${optional}: ${ann ?? "any"}`);
+      continue;
+    }
+    if (m.type === "ClassMethod" || m.type === "TSDeclareMethod") {
+      const kind = m.kind;
+      if (kind === "constructor") {
+        for (const p of (m.params as AstNode[] | undefined) ?? []) {
+          if (p.type !== "TSParameterProperty") continue;
+          const inner = p.parameter as AstNode | undefined;
+          const name = inner && inner.type === "Identifier" ? String(inner.name) : undefined;
+          if (!name) continue;
+          const pAnn = nodeTextOf(source, inner?.typeAnnotation as AstNode | undefined)?.replace(/^\s*:\s*/, "");
+          members.push(`${name}: ${pAnn ?? "any"}`);
+        }
+        continue;
+      }
+      if (kind === "get") {
+        members.push(`${key}${optional}: ${ann ?? "any"}`);
+        continue;
+      }
+      if (kind === "set") continue;
+      const ret = nodeTextOf(source, m.returnType as AstNode | undefined)?.replace(/^\s*:\s*/, "");
+      const params = ((m.params as AstNode[] | undefined) ?? [])
+        .map((p) => classMethodParamText(source, p))
+        .filter((p): p is string => p !== undefined)
+        .join(", ");
+      members.push(`${key}${optional}(${params}): ${ret ?? "any"}`);
+    }
+  }
+  return `{${members.join(";")}}`;
+}
+
+function enumLiteralValue(init: AstNode): string | undefined {
+  if (init.type === "NumericLiteral") return String(init.value);
+  if (init.type === "StringLiteral") return JSON.stringify(init.value);
+  if (
+    init.type === "UnaryExpression" &&
+    (init.operator === "-" || init.operator === "+") &&
+    (init.argument as AstNode | undefined)?.type === "NumericLiteral"
+  ) {
+    const n = Number((init.argument as AstNode).value);
+    return String(init.operator === "-" ? -n : n);
+  }
+  return undefined;
+}
+
+/**
+ * BUG-403：enum 作为**类型**时的值域（成员字面量联合）。
+ * 无显式初值按 TS 自增规则推进；不可静态求值的初值跳过（不猜）。
+ */
+function enumTypeText(stmt: AstNode): string | undefined {
+  // Babel 8：`TSEnumDeclaration.body` 是 `TSEnumBody`（members 在其上）；
+  // 旧版直接把 members 挂在声明上。两种形态都收。
+  const body = stmt.body as { members?: AstNode[] } | undefined;
+  const members = (stmt.members as AstNode[] | undefined) ?? body?.members;
+  if (!Array.isArray(members)) return undefined;
+  const values: string[] = [];
+  let next = 0;
+  for (const m of members) {
+    const init = m.initializer as AstNode | undefined;
+    if (!init) {
+      values.push(String(next));
+      next += 1;
+      continue;
+    }
+    const v = enumLiteralValue(init);
+    if (v === undefined) continue;
+    values.push(v);
+    const n = Number(v);
+    if (Number.isFinite(n) && v.trim() !== "") next = n + 1;
+  }
+  if (values.length === 0) return "number";
+  return values.join(" | ");
+}
+
 export function namedTypeTextsForSource(source: string): ReadonlyMap<string, string> {
   const hit = namedTypeTextMemo.get(source);
   if (hit) return hit;
@@ -398,6 +576,15 @@ export function namedTypeTextsForSource(source: string): ReadonlyMap<string, str
         const ann = stmt.typeAnnotation as { start?: number; end?: number } | undefined;
         if (typeof ann?.start !== "number" || typeof ann.end !== "number") continue;
         out.set(id.name, source.slice(ann.start, ann.end));
+      } else if (type === "ClassDeclaration" || type === "ClassExpression") {
+        // BUG-403：class 作为类型 = 实例结构；此前只登记 interface / type
+        // alias ⇒ `x: Cat` 直接回落 any（连 x.name 都记假 may-throw）。
+        const text = classInstanceTypeText(source, stmt as AstNode);
+        if (text) out.set(id.name, text);
+      } else if (type === "TSEnumDeclaration") {
+        // BUG-403：enum 作为类型 = 成员字面量联合。
+        const text = enumTypeText(stmt as AstNode);
+        if (text) out.set(id.name, text);
       }
     }
   } catch {
@@ -1067,6 +1254,55 @@ function mapTsType(
       return abs({ k: "tuple", elements: prefix, rest }, undefined, undefined, "exact");
     }
     if (hasOptional) {
+      // BUG-377：可选位元组不能塌成 `arr(元素并集)`——那会同时丢掉
+      // **位置维度**（`t[0]` 变 `number | string`）与「可选位缺席」的
+      // `undefined` 臂。TS 语义是每个合法长度一个元组臂：
+      // `[number, string?]` = `[number] | [number, string]`。
+      // 逐臂建模后，`t[0]` 仍是 number，`t[1]` 是 string | undefined。
+      const firstOptional = parts.findIndex((p) => p.optional);
+      const optionalCount = parts.filter((p) => p.optional).length;
+      // 爆炸上限：可选位很多时逐长度展开不划算，退回旧的 arr 并集口径。
+      if (firstOptional >= 0 && optionalCount <= 6) {
+        const restIdx2 = parts.findIndex((p) => p.rest);
+        const restParts = restIdx2 >= 0 ? parts.slice(restIdx2) : [];
+        const prefixParts = parts.slice(0, firstOptional);
+        const optionalParts = parts.slice(firstOptional, restIdx2 >= 0 ? restIdx2 : parts.length);
+        const mapParts = (ps: typeof parts): Abs[] | undefined => {
+          const out: Abs[] = [];
+          for (const part of ps) {
+            const mapped = mapTsType(part.text, allowNullish, typeParams);
+            if (!mapped) return undefined;
+            out.push(mapped);
+          }
+          return out;
+        };
+        const prefix = mapParts(prefixParts);
+        const optionals = mapParts(optionalParts);
+        if (prefix && optionals) {
+          let rest: Abs | undefined;
+          if (restParts.length > 0) {
+            const tails: Abs[] = [];
+            for (const part of restParts) {
+              const mapped = mapTsType(part.text, allowNullish, typeParams);
+              if (!mapped) return undefined;
+              const s = mapped.shape;
+              if (s.k === "arr") tails.push(s.element);
+              else if (s.k === "tuple") {
+                tails.push(...s.elements);
+                if (s.rest) tails.push(s.rest);
+              } else tails.push(mapped);
+            }
+            rest = tails.length > 0 ? joinAbsList(tails) : undefined;
+          }
+          const arms: Abs[] = [];
+          for (let n = 0; n <= optionals.length; n++) {
+            const elements = [...prefix, ...optionals.slice(0, n)];
+            arms.push(abs({ k: "tuple", elements, ...(rest ? { rest } : {}) }, undefined, undefined, "exact"));
+          }
+          if (arms.length === 1) return arms[0]!;
+          return abs({ k: "sum", members: arms }, undefined, undefined, "exact");
+        }
+      }
       const elems: Abs[] = [];
       for (const part of parts) {
         const mapped = mapTsType(part.text, allowNullish, typeParams);

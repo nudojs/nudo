@@ -19,6 +19,7 @@ import {
   analyzeFile,
   defaultLoadModule,
   injectBindings,
+  USAGE_ERROR_CODE,
   type AnalysisResult,
   type CallRecord,
 } from "@nudojs/service";
@@ -282,8 +283,6 @@ async function runCheckJsonFace(
 }
 
 /** 用法错误的机器面码（`--json` 信封的 pathErrors[]）。 */
-const USAGE_ERROR_CODE = "nudo:usage-error";
-
 /**
  * 用法错误出口（Bug 954）。
  *

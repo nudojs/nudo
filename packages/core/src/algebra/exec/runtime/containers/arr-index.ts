@@ -29,7 +29,7 @@ import {
   propertyKeyOf,
   markKeySetOpenAbs,
 } from "../../../objects.ts";
-import { TUPLE_MATERIALIZE_CAP } from "../../../containers.ts";
+import { TUPLE_MATERIALIZE_CAP, filterResultElementOf } from "../../../containers.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../../builtins/shared.ts";
 import { isSetAbs, isMapAbs, setElementsAbs, mapEntriesAbs } from "../../../collections.ts";
 import { hasGenView, peekGenElement, peekAllGenElements, proxyPartsOf, proxyTrapOf } from "../../match-iter.ts";
@@ -88,6 +88,14 @@ export function $idx(
   if (a?.shape?.k === "any") {
     if (!opts?.silent) noteAnyMemberMayThrow(a, "<computed>", "property");
     return anyMemberResult();
+  }
+  // BUG-402：`keyof {a;b}` 的字面量联合键 ⇒ 逐成员分发后 join。
+  // 不分布会把 sum key 当抽象键，返回「全部槽 ∪ unknown」。
+  if (i?.shape?.k === "sum" && i.shape.members.length > 0) {
+    return i.shape.members.reduce(
+      (acc, m) => joinAbs(acc, $idx(a, m, opts)),
+      abs({ k: "never" }, undefined, undefined, "exact"),
+    );
   }
   // ToPropertyKey：null/undefined/boolean 字面量 → "null"/"undefined"/"true"…
   //（litValue 哨兵会把 lit(undefined) 吞成「无 lit」，不得走抽象下标）
@@ -172,6 +180,9 @@ export function $idx(
   }
   if (a.shape.k === "tuple") {
     const els = a.shape.elements;
+    // BUG-394：filter 的结果在 TS 是 array（长度可变）⇒ 越界下标读按
+    // 元素域投影，而不是 tuple 上界的 undefined。
+    const filterEl = filterResultElementOf(a);
     // 确定非下标键（"foo"、1.5…）：交给 $get 的**同一事实源**判定——
     // Array.prototype / Object.prototype 原型成员（"map"、"toString"、
     // Symbol.iterator 投影…）必须读回方法值；只有表外键才确定缺失。
@@ -182,8 +193,9 @@ export function $idx(
     }
     if (idx !== undefined) {
       if (idx < els.length) return els[idx]!;
-      return undef();
+      return filterEl ?? undef();
     }
+    if (filterEl !== undefined) return filterEl;
     // 抽象下标：可能命中任一元素，也可能越界/非下标 → 必须并入 undefined
     //（OOB marker——越界是抽象精度产物，下游嵌套读写不记 may-throw）
     if (els.length === 0) return oobUndef();
