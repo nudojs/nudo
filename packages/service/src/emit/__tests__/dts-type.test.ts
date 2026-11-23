@@ -148,6 +148,28 @@ describe("dts 类型 IR 快照", () => {
     expect(ir(tpl)).toMatchSnapshot();
   });
 
+  it("交叉类型在数组 / rest 位置加括号", () => {
+    const view = mk({
+      k: "obj",
+      slots: {
+        "0": { value: strLit("a") },
+        length: { value: numLit(1) },
+        index: { value: numLit(0) },
+      },
+      view: "array",
+    } as never);
+    expect(ir(mk({ k: "arr", element: view }))).toBe('(["a"] & { index: 0 })[]');
+    expect(
+      ir(
+        mk({
+          k: "tuple",
+          elements: [str()],
+          rest: view,
+        }),
+      ),
+    ).toBe('[string, ...(["a"] & { index: 0 })[]]');
+  });
+
   it("无源码名的用户符号键被跳过（与旧渲染器同口径）", () => {
     expect(
       ir(

@@ -624,7 +624,10 @@ export function renderDtsType(t: DtsType): string {
       return "unknown";
     case "array": {
       const el = renderDtsType(t.element);
-      const needsParens = t.element.kind === "union" || t.element.kind === "fn";
+      const needsParens =
+        t.element.kind === "union" ||
+        t.element.kind === "fn" ||
+        t.element.kind === "intersection";
       const arr = needsParens ? `(${el})[]` : `${el}[]`;
       return t.readonly ? `readonly ${arr}` : arr;
     }
@@ -637,7 +640,9 @@ export function renderDtsType(t: DtsType): string {
         const restText =
           t.rest.kind === "array"
             ? renderDtsType(t.rest)
-            : t.rest.kind === "union" || t.rest.kind === "fn"
+            : t.rest.kind === "union" ||
+                t.rest.kind === "fn" ||
+                t.rest.kind === "intersection"
               ? `(${renderDtsType(t.rest)})[]`
               : `${renderDtsType(t.rest)}[]`;
         parts.push(`...${restText}`);
