@@ -57,6 +57,7 @@ import {
 } from "./dts-annotation-text.ts";
 import {
   nodeAnnotationText,
+  patternBindingNames,
   safeFieldTypeAnnotation,
   safeValueAnnotation,
   surfaceName,
@@ -2905,32 +2906,7 @@ export function generateDts(result: AnalysisResult): string {
  * 在 dts 面整体缺席（消费端 TS2305）。覆盖 Identifier / RestElement /
  * AssignmentPattern / 嵌套模式。
  */
-function patternBindingNames(id: SurfaceNode | undefined): string[] {
-  if (!id) return [];
-  if (id.type === "Identifier") {
-    const n = surfaceName(id);
-    return n ? [n] : [];
-  }
-  const out: string[] = [];
-  if (id.type === "ObjectPattern") {
-    for (const p of (id.properties as SurfaceNode[] | undefined) ?? []) {
-      if (p.type === "RestElement") {
-        out.push(...patternBindingNames(p.argument as SurfaceNode | undefined));
-        continue;
-      }
-      out.push(...patternBindingNames((p.value ?? p.argument) as SurfaceNode | undefined));
-    }
-  } else if (id.type === "ArrayPattern") {
-    for (const e of (id.elements as SurfaceNode[] | undefined) ?? []) {
-      if (e) out.push(...patternBindingNames(e));
-    }
-  } else if (id.type === "AssignmentPattern") {
-    out.push(...patternBindingNames(id.left as SurfaceNode | undefined));
-  } else if (id.type === "RestElement") {
-    out.push(...patternBindingNames(id.argument as SurfaceNode | undefined));
-  }
-  return out;
-}
+
 
 /**
  * 对象字面量成员函数的源码注解（BUG-157）——只收**静态键**的箭头 / 函数

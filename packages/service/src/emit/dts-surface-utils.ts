@@ -61,6 +61,40 @@ export function surfaceSymbolKeyName(n: SurfaceNode | undefined): string | undef
   return WELL_KNOWN_SYMBOLS.has(engineKey) ? engineKey : undefined;
 }
 
+/**
+ * 变量声明模式里的**全部绑定名**（Bug 63）。`export const { a, b } = src` /
+ * `export const [c, ...rest] = arr` 的 `id` 是 ObjectPattern / ArrayPattern，
+ * 旧扫描只读 `surfaceName(d.id)`（恒 undefined）⇒ 这些运行时真实存在的导出
+ * 在 dts 面整体缺席（消费端 TS2305）。覆盖 Identifier / RestElement /
+ * AssignmentPattern / 嵌套模式。
+ */
+export function patternBindingNames(id: SurfaceNode | undefined): string[] {
+  if (!id) return [];
+  if (id.type === "Identifier") {
+    const n = surfaceName(id);
+    return n ? [n] : [];
+  }
+  const out: string[] = [];
+  if (id.type === "ObjectPattern") {
+    for (const p of (id.properties as SurfaceNode[] | undefined) ?? []) {
+      if (p.type === "RestElement") {
+        out.push(...patternBindingNames(p.argument as SurfaceNode | undefined));
+        continue;
+      }
+      out.push(...patternBindingNames((p.value ?? p.argument) as SurfaceNode | undefined));
+    }
+  } else if (id.type === "ArrayPattern") {
+    for (const e of (id.elements as SurfaceNode[] | undefined) ?? []) {
+      if (e) out.push(...patternBindingNames(e));
+    }
+  } else if (id.type === "AssignmentPattern") {
+    out.push(...patternBindingNames(id.left as SurfaceNode | undefined));
+  } else if (id.type === "RestElement") {
+    out.push(...patternBindingNames(id.argument as SurfaceNode | undefined));
+  }
+  return out;
+}
+
 /** 源码片段（`keepTs` 的 AST 上类型注解仍在 ⇒ 直接切原文；越界 ⇒ undefined） */
 export function surfaceSlice(source: string, n: SurfaceNode | undefined): string | undefined {
   const start = n?.start;
