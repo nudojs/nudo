@@ -65,12 +65,14 @@ export {
   projectModuleDts,
   type DtsContractFace,
   type DtsFunctionProjection,
-  type DtsModuleSurface,
   type DtsModuleProjection,
   type DtsModuleExtras,
-  type DtsValueSurface,
-  type DtsClassSurface,
 } from "./dts-generator.ts";
+export type {
+  DtsClassSurface,
+  DtsModuleSurface,
+  DtsValueSurface,
+} from "./dts-ir.ts";
 
 export {
   absToSchemaSource,
