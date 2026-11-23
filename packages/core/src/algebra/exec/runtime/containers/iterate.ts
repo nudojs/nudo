@@ -79,6 +79,7 @@ import {
 } from "./iterate-brand-elements.ts";
 export { $tpl } from "./template-object.ts";
 export { $forInKeys } from "./for-in-keys.ts";
+export { $elems, $yieldStarElems, elemsOf } from "./elems.ts";
 export {
   builtinExactIterableElems,
   iterableElementDomain,
@@ -429,43 +430,13 @@ export function guardIterable(a: Abs, ctx: string): void {
  *  TypeError；any/unknown → may。$forOf 与 call/new spread 实参路径继承。
  *  Bug 34：生成器对象的体内延迟异常（definite 抛 / soft may-throw 重记）
  *  在消费点重放——迭代不再静默截断成前缀。 */
-export function $elems(a: Abs): Abs[] {
-  guardIterable(a, "iteration");
-  replayGenDeferred(a);
-  return elemsOf(a);
-}
+
 
 /** yield* 委托展开（Bug 82）：迭代性守卫与元素列表同 $elems，另报长度
  *  可知性——tuple / 字符串 prim / Set / Map / match-iter 是全量精确展开
  *  （元素个数确定）；arr / any / obj / brand / sum 等给单代表元素，
  *  长度不可判（收集器不得以 exact 元组出货）。 */
-export function $yieldStarElems(a: Abs): { els: Abs[]; lengthKnown: boolean } {
-  // any 接收者的元素域是 any（无约束），不是 unknown（引擎债）——与
-  // $concat sideEl 同口径（`[...x]`（x:any）→ any[]）。但可迭代性守卫
-  // 不得跳过（Bug 34 gate 面）：GetIterator 对 any 是 may TypeError——
-  // 生成器体内记进 $gen 帧，消费点重放（`for (const v of x)` 同判）
-  if (a.shape.k === "any") {
-    guardIterable(a, "yield* delegation");
-    return { els: [anyMemberResult()], lengthKnown: false };
-  }
-  const els = $elems(a);
-  const s = a.shape;
-  // R1b：exact 生成器视图（线性收集序列）长度可知——yield* 委托并出的
-  // 元素序列是权威列表，不 bumpGenPathSensitive（外层生成器保持 exact）
-  // Bug 198（S20）：live 集合 / 数组迭代器的元素面在**消费视图**里（静态侧表
-  // 已撤）⇒ 长度可知性必须同口径认消费视图——只查静态侧表会把「元素个数
-  // 确定」的委托降级成 path（bumpGenPathSensitive）。消费视图存在即元素个数
-  // 确定（含 R1b 的 exact 生成器视图——它是消费视图的一种）。
-  const lengthKnown =
-    s.k === "tuple" ||
-    s.k === "never" ||
-    (s.k === "prim" && s.type === "string") ||
-    isSetAbs(a) ||
-    isMapAbs(a) ||
-    matchIterElements(a) !== undefined ||
-    genDrainViewOf(a) !== undefined;
-  return { els, lengthKnown };
-}
+
 
 /** 模板标签对象（GetTemplateObject，Bug 34）：冻结的类数组 obj——数字槽
  *  为 cooked 字符串（无效转义序列时 cooked 是 undefined，原生实测）、
@@ -501,48 +472,7 @@ export function $yieldStarElems(a: Abs): { els: Abs[]; lengthKnown: boolean } {
  */
 
 
-export function elemsOf(a: Abs): Abs[] {
-  if (a.shape.k === "tuple") return [...a.shape.elements];
-  // #175 残留：arr 元素域分发标记（len-sharing.ts——跨读不保证同值）
-  if (a.shape.k === "arr") return [markDomainShared(a.shape.element)];
-  // BUG-401：注解 `Map<K,V>` / `Set<T>` 的 obj 模型携带集合身份 facet
-  // （方法面保留 obj，元素域由 genElements 承载）——长度不可知，不能先过
-  // `iterableExactElements`（它按协议故意返回 null）。
-  if (a.facets?.brand === "Map" || a.facets?.brand === "Set") {
-    const els = a.facets.genElements;
-    if (els && els.length > 0) return els;
-  }
-  // Set/Map、URLSearchParams、boxed String、生成器消费视图、match 迭代器、
-  // 字面量字符串、已走完的用户 iterable、TypedArray、brand 内层 tuple ——
-  // 精确序列只有一个来源。
-  const exact = iterableExactElements(a);
-  if (exact) return exact;
-  // BUG-364：长度未知的序列迭代器（arr.keys/values/entries 的抽象臂、
-  // 抽象字符串迭代器）——元素域取单代表（表不声明长度 ⇒ for-of 仍
-  // unbounded，0 次出口由调用方 join 承接）。
-  const ase = abstractSeqElementOf(a);
-  if (ase !== undefined) return [ase];
-  // 抽象字符串 prim：code point 迭代，元素域恒 string（Bug 19：for-of /
-  // yield* 循环变量折 unknown → 算术/成员读级联污染）——单代表元素，与
-  // arr 臂 [element] 同口径（长度不可知由 $forOf unbounded 出口 join 承接）
-  if (a.shape.k === "prim" && a.shape.type === "string") {
-    return [abs({ k: "prim", type: "string" }, undefined, undefined, "path")];
-  }
-  // Bug 140：用户 iterable 的**截断**尾域（exact 能力返回 null）——
-  // 元素按迭代序取，触顶后补 unknown（剩余元素个数不可知）。
-  const ui = collectUserIterElems(a, USER_ITER_MAX_STEPS);
-  if (ui) return ui.truncated ? [...ui.els, unknown] : ui.els;
-  // TypedArray brand 的非精确回退：内层索引槽未物化 ⇒ 元素域单代表。
-  if (a.shape.k === "brand") {
-    const elem = TYPED_ARRAY_ELEMENT[(a.shape as { name?: string }).name ?? ""];
-    if (elem) return [abs({ k: "prim", type: elem }, undefined, undefined, "path")];
-    // brand 结构面在内层（issue #147）：env/harvest 的 Array<T> brand 的
-    // for-of / spread 元素域 = 内层 arr 元素（此前折 unknown）。Set/Map/
-    // match-iter brand 已由能力函数命中，此处只兜结构 delegation。
-    return elemsOf(a.shape.shape);
-  }
-  return [unknown];
-}
+
 
 /**
  * for-of：对 iterable 每个元素跑 body；有界展开。
