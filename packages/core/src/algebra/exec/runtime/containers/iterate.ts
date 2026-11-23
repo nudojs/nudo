@@ -73,6 +73,11 @@ import { urlSearchParamsEntriesOf } from "../../../builtins/error/web.ts";
 import { typedArrayEnumKeyView } from "../../../builtins/object/enum-entries.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../../builtins/shared.ts";
 import {
+  boxedStringChars,
+  boxedStringLength,
+  typedArrayIterElems,
+} from "./iterate-brand-elements.ts";
+import {
   anyMemberResult,
 } from "../../member-diag.ts";
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
@@ -527,30 +532,10 @@ export function builtinExactIterableElems(a: Abs): Abs[] | undefined {
  * 属性）+ length 槽；原生 String.prototype[Symbol.iterator] 按 code point
  * 展开 ⇒ 元素域 = 字符序列（非 literal 抽象串 → undefined，交给上层降级）。
  */
-function boxedStringChars(a: Abs): Abs[] | undefined {
-  if (a.shape.k !== "brand" || a.shape.name !== "String") return undefined;
-  const inner = a.shape.shape;
-  if (!inner || inner.shape.k !== "obj") return undefined;
-  const slots = inner.shape.slots;
-  const lenR = litValue(getSlot(slots, "length")?.value ?? unknown);
-  if (!lenR.ok || typeof lenR.value !== "number") return undefined;
-  const out: Abs[] = [];
-  for (let i = 0; i < lenR.value; i++) {
-    const sl = getSlot(slots, String(i));
-    if (!sl) return undefined; // 槽缺 → 不可判（不得折确定长度）
-    out.push(sl.value);
-  }
-  return out;
-}
+
 
 /** Bug 236：boxed String 品牌的长度（原生 String 包装对象 length 自有槽） */
-function boxedStringLength(a: Abs): number | undefined {
-  if (a.shape.k !== "brand" || a.shape.name !== "String") return undefined;
-  const inner = a.shape.shape;
-  if (!inner || inner.shape.k !== "obj") return undefined;
-  const lenR = litValue(getSlot(inner.shape.slots, "length")?.value ?? unknown);
-  return lenR.ok && typeof lenR.value === "number" ? lenR.value : undefined;
-}
+
 
 /** for await（GetIterator hint=async）：@@asyncIterator 槽即全量（异步可迭代）；
  *  其余口径与同步迭代一致（数字等 prim definite、闭 obj 无任何迭代器槽
@@ -935,23 +920,7 @@ export function $tpl(cooked: Array<string | undefined>, raw: string[]): Abs {
  * 逐槽取值（`[...new Uint8Array([1,2])]` → [1,2]）；任一位不可判 → undefined
  * （调用方退元素域单代表，不得折半精确元组）。
  */
-function typedArrayIterElems(x: Abs): Abs[] | undefined {
-  if (x.shape.k !== "brand") return undefined;
-  if (TYPED_ARRAY_ELEMENT[(x.shape as { name?: string }).name ?? ""] === undefined) {
-    return undefined;
-  }
-  const view = typedArrayEnumKeyView(x);
-  const inner = (x.shape as { shape?: Abs }).shape;
-  if (view?.k !== "exact" || !inner || inner.shape.k !== "obj") return undefined;
-  const slots = (inner.shape as unknown as { slots: Record<string, { value: Abs }> }).slots;
-  const out: Abs[] = [];
-  for (let i = 0; i < view.count; i++) {
-    const s = getSlot(slots, String(i));
-    if (!s) return undefined;
-    out.push(s.value);
-  }
-  return out;
-}
+
 
 function elemsOf(a: Abs): Abs[] {
   if (a.shape.k === "tuple") return [...a.shape.elements];
