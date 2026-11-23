@@ -6,6 +6,7 @@
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { nodeNextSpecRewrites } from "./module-specifier-rewrites.ts";
 
 const TYPE_EXTS = [".ts", ".tsx", ".d.ts", ".mts", ".cts"];
 const INDEX_NAMES = ["index.d.ts", "index.ts", "index.tsx"];
@@ -27,23 +28,11 @@ function readSource(path: string): string | undefined {
   return text;
 }
 
-/** NodeNext / bundler 的 `.js` specifier 映射（BUG-400）。 */
-const JS_SPECIFIER_TO_TS: Record<string, readonly string[]> = {
-  ".js": [".ts", ".tsx", ".d.ts"],
-  ".jsx": [".tsx", ".ts", ".d.ts"],
-  ".mjs": [".mts", ".d.mts", ".ts"],
-  ".cjs": [".cts", ".d.cts", ".ts"],
-};
-
-function fileWithExts(raw: string): string | undefined {
-  const candidates = [raw];
+function fileWithExts(raw: string, fromFile?: string): string | undefined {
   // `import type { T } from "./types.js"` 是 NodeNext / bundler 的常见写法；
-  // TS 会把 specifier 的 `.js` 换成源文件扩展名，而不是追加 `.js.ts`。
-  for (const [jsExt, tsExts] of Object.entries(JS_SPECIFIER_TO_TS)) {
-    if (!raw.endsWith(jsExt)) continue;
-    const stem = raw.slice(0, -jsExt.length);
-    for (const ext of tsExts) candidates.push(`${stem}${ext}`);
-  }
+  // 与运行时加载共用同一份改写表（`module-specifier-rewrites.ts`），否则同一
+  // specifier 可能在求值面与注解面解析到不同文件。
+  const candidates = [raw, ...(fromFile ? nodeNextSpecRewrites(raw, fromFile) : [])];
   for (const ext of TYPE_EXTS) candidates.push(`${raw}${ext}`);
   for (const cand of candidates) {
     const text = readSource(cand);
@@ -299,8 +288,8 @@ export function typeAnnotationSourceOf(
 ): string | undefined {
   if (spec.startsWith(".")) {
     const p = isAbsolute(spec) ? spec : resolve(dirname(fromFile), spec);
-    return fileWithExts(p);
+    return fileWithExts(p, fromFile);
   }
-  if (spec.startsWith("/")) return fileWithExts(spec);
+  if (spec.startsWith("/")) return fileWithExts(spec, fromFile);
   return resolveTsconfigPath(spec, fromFile) ?? resolvePackageType(spec, fromFile);
 }
