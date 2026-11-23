@@ -77,11 +77,26 @@ export type DtsType =
       params: Array<{ name: string; type: DtsType }>;
       returnType: DtsType;
     }
+  | {
+      kind: "overloads";
+      arms: Array<{ paramTypes: DtsType[]; returnType: DtsType }>;
+    }
   | { kind: "union"; members: DtsType[] };
+
+export type DtsBrandScope = {
+  /** 产物里可解析的类名 */
+  names: ReadonlySet<string>;
+  /** 类名 → 必填类型形参占位实参 */
+  requiredArgFillers: ReadonlyMap<string, readonly string[]>;
+};
 
 export type DtsTypeOpts = {
   /** `as const` 通道下的值整体只读（与 absToTSType 的全局开关同口径） */
   readonlyValues?: boolean;
+  /** 模块投影作用域；缺省 = 纯投影（类名原样保留） */
+  brandScope?: DtsBrandScope;
+  /** TS 全局构造器名判定（有作用域时用于保留 Date/RegExp 等） */
+  runtimeGlobalCtor?: (name: string) => boolean;
 };
 
 /**
@@ -173,15 +188,42 @@ export function dtsTypeOfAbs(a: Abs, opts: DtsTypeOpts = {}): DtsType | undefine
         : inner;
     }
     case "brand": {
-      const alias = BRAND_TYPE_ALIASES.get(a.shape.name);
+      const name = a.shape.name;
+      const alias = BRAND_TYPE_ALIASES.get(name);
       if (alias !== undefined) return { kind: "named", text: alias };
-      const builtin = BUILTIN_GENERIC_BRANDS.get(a.shape.name);
+      const builtin = BUILTIN_GENERIC_BRANDS.get(name);
       if (builtin !== undefined) return { kind: "named", text: builtin };
-      // 用户类 / 全局构造器名需要当前模块投影作用域 ⇒ 回落旧渲染器。
-      return undefined;
+      if (!isJsBindingIdent(name) && !/^[A-Z][A-Za-z0-9_$]*$/.test(name)) {
+        return { kind: "unknown" };
+      }
+      const scope = opts.brandScope;
+      if (scope === undefined) return { kind: "named", text: name };
+      if (scope.names.has(name)) {
+        const fillers = scope.requiredArgFillers.get(name);
+        return {
+          kind: "named",
+          text: fillers && fillers.length > 0 ? `${name}<${fillers.join(", ")}>` : name,
+        };
+      }
+      if (opts.runtimeGlobalCtor?.(name) === true) return { kind: "named", text: name };
+      return { kind: "unknown" };
     }
     case "fn": {
-      if (a.shape.overloads !== undefined && a.shape.overloads.length > 0) return undefined;
+      if (a.shape.overloads !== undefined && a.shape.overloads.length > 0) {
+        const arms: Array<{ paramTypes: DtsType[]; returnType: DtsType }> = [];
+        for (const arm of a.shape.overloads) {
+          const paramTypes: DtsType[] = [];
+          for (const pt of arm.paramTypes) {
+            const t = dtsTypeOfAbs(pt, opts);
+            if (t === undefined) return undefined;
+            paramTypes.push(t);
+          }
+          const returnType = dtsTypeOfAbs(arm.returnType, opts);
+          if (returnType === undefined) return undefined;
+          arms.push({ paramTypes, returnType });
+        }
+        return { kind: "overloads", arms };
+      }
       const params: Array<{ name: string; type: DtsType }> = [];
       const names = a.shape.params ?? [];
       for (let i = 0; i < names.length; i++) {
@@ -244,7 +286,6 @@ export function dtsTypeOfAbs(a: Abs, opts: DtsTypeOpts = {}): DtsType | undefine
         return { kind: "tuple", elements };
       }
       const entries = Object.entries(a.shape.slots);
-      if (a.shape.open === true && entries.length > 0) return undefined;
       let index: { key: DtsType; value: DtsType } | undefined;
       if (a.shape.index !== undefined) {
         const key = dtsTypeOfAbs(a.shape.index.key, opts);
@@ -406,6 +447,13 @@ export function renderDtsType(t: DtsType): string {
     case "fn": {
       const params = t.params.map((p) => `${p.name}: ${renderDtsType(p.type)}`);
       return `(${params.join(", ")}) => ${renderDtsType(t.returnType)}`;
+    }
+    case "overloads": {
+      const arms = t.arms.map(
+        (a) =>
+          `(${a.paramTypes.map((p, i) => `a${i}: ${renderDtsType(p)}`).join(", ")}): ${renderDtsType(a.returnType)}`,
+      );
+      return `{ ${arms.join("; ")} }`;
     }
     case "union": {
       const parts = t.members

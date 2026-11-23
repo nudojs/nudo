@@ -97,6 +97,13 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
 
     const open = mk({ k: "obj", slots: {}, open: true });
     expect(ir(open)).toBe("Record<string, unknown>");
+
+    const openWithSlots = mk({
+      k: "obj",
+      slots: { a: { value: num() } },
+      open: true,
+    } as never);
+    expect(ir(openWithSlots)).toBe(absToTSType(openWithSlots));
   });
 
   it("契约字面量槽：eq(self, lit) → 字面量类型", () => {
@@ -179,15 +186,36 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
       shape: mk({ k: "obj", slots: {} }),
     } as never);
     expect(ir(args)).toBe("IArguments");
+    const myClass = mk({
+      k: "brand",
+      name: "MyClass",
+      shape: mk({ k: "obj", slots: {} }),
+    } as never);
+    // 纯投影（无模块面）保持类名原样。
+    expect(ir(myClass)).toBe("MyClass");
+    const scope = {
+      names: new Set(["MyClass"]),
+      requiredArgFillers: new Map<string, readonly string[]>([["MyClass", ["unknown"]]]),
+    };
     expect(
-      dtsTypeOfAbs(
-        mk({
-          k: "brand",
-          name: "MyClass",
-          shape: mk({ k: "obj", slots: {} }),
-        } as never),
+      renderDtsType(dtsTypeOfAbs(myClass, { brandScope: scope })!),
+    ).toBe("MyClass<unknown>");
+    expect(
+      renderDtsType(
+        dtsTypeOfAbs(myClass, {
+          brandScope: { names: new Set(), requiredArgFillers: new Map() },
+          runtimeGlobalCtor: (n) => n === "MyClass",
+        })!,
       ),
-    ).toBeUndefined();
+    ).toBe("MyClass");
+    expect(
+      renderDtsType(
+        dtsTypeOfAbs(myClass, {
+          brandScope: { names: new Set(), requiredArgFillers: new Map() },
+          runtimeGlobalCtor: () => false,
+        })!,
+      ),
+    ).toBe("unknown");
   });
 
   it("fn：简单签名 / 可选 / rest / 数组与联合中的括号", () => {
@@ -228,15 +256,18 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
     expect(ir(joinAbs(simple, num()))).toBe(absToTSType(joinAbs(simple, num())));
   });
 
-  it("fn：重载集回落旧渲染器", () => {
+  it("fn：重载集发调用签名对象", () => {
     const fn = mk({
       k: "fn",
       params: ["x"],
       paramTypes: [num()],
       returnType: str(),
-      overloads: [{ paramTypes: [num()], returnType: str() }],
+      overloads: [
+        { paramTypes: [num()], returnType: str() },
+        { paramTypes: [str()], returnType: num() },
+      ],
     } as never);
-    expect(dtsTypeOfAbs(fn)).toBeUndefined();
+    expect(ir(fn)).toBe(absToTSType(fn));
   });
 
   it("effect：promise 包装 / 非 promise 透明", () => {
@@ -246,10 +277,7 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
     expect(ir(thunk)).toBe(absToTSType(thunk));
   });
 
-  it("不支持：用户 brand / 类型变量 ⇒ undefined（回落旧渲染器）", () => {
-    expect(
-      dtsTypeOfAbs(mk({ k: "brand", name: "Date", shape: mk({ k: "obj", slots: {} }) } as never)),
-    ).toBeUndefined();
+  it("不支持：类型变量 ⇒ undefined（回落旧渲染器）", () => {
     expect(
       dtsTypeOfAbs(abs({ k: "any" }, { op: "var", id: "T" }, undefined, "path")),
     ).toBeUndefined();
