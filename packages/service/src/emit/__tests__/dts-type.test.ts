@@ -157,6 +157,49 @@ describe("dts 类型 IR 与 absToTSType 逐字同形（支持子集）", () => {
     ).toBeUndefined();
   });
 
+  it("生成器 / 迭代器协议对象", () => {
+    const nextFn = mk({ k: "fn", params: [], paramTypes: [] } as never);
+    const generator = mk({
+      k: "obj",
+      slots: {
+        next: { value: nextFn },
+        return: { value: nextFn },
+        "0": { value: numLit(1) },
+        "1": { value: numLit(2) },
+      },
+    } as never);
+    expect(ir(generator)).toBe(absToTSType(generator));
+
+    const iterator = mk({
+      k: "obj",
+      slots: { next: { value: nextFn }, "0": { value: numLit(1) } },
+    } as never);
+    expect(ir(iterator)).toBe(absToTSType(iterator));
+
+    const asyncGen = mk({
+      k: "obj",
+      slots: {
+        next: { value: nextFn },
+        "@@asyncIterator": { value: nextFn, symbolKey: true },
+        "0": { value: numLit(1) },
+      },
+    } as never);
+    expect(ir(asyncGen)).toBe(absToTSType(asyncGen));
+
+    const carried = {
+      ...mk({
+        k: "obj",
+        slots: { next: { value: nextFn }, return: { value: nextFn } },
+      } as never),
+      facets: {
+        genElements: [numLit(1)],
+        genReturn: str(),
+        genNext: boolLit(true),
+      },
+    } as never;
+    expect(ir(carried)).toBe("Generator<number, string, boolean>");
+  });
+
   it("用户符号队列 / internal 槽跳过", () => {
     const symObj = mk({
       k: "obj",

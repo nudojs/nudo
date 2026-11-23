@@ -9,7 +9,9 @@
  * 渲染器。
  */
 import {
+  abs as makeAbs,
   extStateOf,
+  joinAbs,
   litValue,
   lookupObjAccessor,
   termEquals,
@@ -136,6 +138,82 @@ export type DtsTypeOpts = {
   /** @internal 递归环检测（DESIGN-001：Abs 允许成环） */
   seen?: Set<Abs>;
 };
+
+/** 返回位协变 widen：顶层（含 sum 成员）标量字面量 → 基类型。 */
+function widenTopLevelDts(a: Abs): Abs {
+  if (a.shape.k === "sum") {
+    return makeAbs(
+      { k: "sum", members: a.shape.members.map(widenTopLevelDts) },
+      undefined,
+      undefined,
+      a.conf,
+    );
+  }
+  if (a.term?.op !== "lit" || a.shape.k !== "prim") return a;
+  const v = a.term.value;
+  if (
+    typeof v === "number" ||
+    typeof v === "string" ||
+    typeof v === "boolean" ||
+    typeof v === "bigint"
+  ) {
+    return makeAbs(a.shape, undefined, undefined, a.conf);
+  }
+  return a;
+}
+
+/**
+ * 生成器 / 迭代器协议对象 → Generator / AsyncGenerator / IterableIterator。
+ * 返回 undefined = 不是迭代器；null = 是迭代器但元素 / 返回位不可表达。
+ */
+function iteratorDtsType(a: Abs, opts: DtsTypeOpts): DtsType | null | undefined {
+  if (a.shape.k !== "obj") return undefined;
+  const slots = a.shape.slots;
+  const carried = a.facets?.brand;
+  const genBrand =
+    carried === "Generator" || carried === "AsyncGenerator" ? carried : undefined;
+  if (!slots["next"] && !genBrand) return undefined;
+
+  const elems: Abs[] = a.facets?.genElements ? [...a.facets.genElements] : [];
+  if (!a.facets?.genElements) {
+    for (const [k, slot] of Object.entries(slots)) {
+      if (!CANONICAL_INDEX.test(k)) continue;
+      elems.push(slot.value);
+    }
+  }
+  let elemType: DtsType = { kind: "unknown" };
+  if (elems.length > 0) {
+    let joined: Abs;
+    try {
+      joined = elems.reduce((x, y) => joinAbs(x, y));
+    } catch {
+      joined = elems[0]!;
+    }
+    const t = dtsTypeOfAbs(widenTopLevelDts(joined), opts);
+    if (t === undefined) return null;
+    elemType = t;
+  }
+  const tReturn = a.facets?.genReturn
+    ? dtsTypeOfAbs(widenTopLevelDts(a.facets.genReturn), opts)
+    : undefined;
+  if (a.facets?.genReturn && tReturn === undefined) return null;
+  const tNext = a.facets?.genNext
+    ? dtsTypeOfAbs(widenTopLevelDts(a.facets.genNext), opts)
+    : undefined;
+  if (a.facets?.genNext && tNext === undefined) return null;
+
+  const args: DtsType[] = [elemType];
+  if (tReturn !== undefined) args.push(tReturn);
+  if (tReturn !== undefined && tNext !== undefined) args.push(tNext);
+
+  if (genBrand === "AsyncGenerator" || slots["@@asyncIterator"]) {
+    return { kind: "generic", name: "AsyncGenerator", args };
+  }
+  if (genBrand === "Generator" || slots["return"] || slots["throw"]) {
+    return { kind: "generic", name: "Generator", args };
+  }
+  return { kind: "generic", name: "IterableIterator", args: [elemType] };
+}
 
 /**
  * Abs → DtsType；返回 undefined = 本切片不负责，调用方回落。
@@ -314,6 +392,9 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
       return { kind: "union", members };
     }
     case "obj": {
+      const iter = iteratorDtsType(a, opts);
+      if (iter === null) return undefined;
+      if (iter !== undefined) return iter;
       const entries = Object.entries(a.shape.slots);
       if (a.shape.view !== undefined) {
         if (a.shape.view !== "array") return undefined;
