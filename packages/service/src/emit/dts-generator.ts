@@ -84,6 +84,7 @@ import {
   superTypeArgsText,
   typeParamClauseText,
 } from "./dts-surface-class.ts";
+import { brandScopeOf } from "./dts-brand-scope.ts";
 import { dtsModuleSurface } from "./dts-surface-module.ts";
 
 /** 兼容既有内部消费方：模块面扫描已搬出，但入口仍从 generator 暴露。 */
@@ -234,19 +235,7 @@ function slotAbsOf(a: Abs, k: string, fallback: Abs): Abs {
  * 模块面可解析的类名（本地声明的类 + 已 import 的类）——brand 类名只在这里
  * 列出的名字下才允许进产物。
  */
-function brandScopeOf(surface: DtsModuleSurface | undefined): DtsBrandScope {
-  const names = new Set<string>();
-  const requiredArgFillers = new Map<string, readonly string[]>();
-  if (!surface) return { names, requiredArgFillers };
-  for (const [name, cls] of surface.classes) {
-    names.add(name);
-    const fillers = requiredTypeArgFillers(cls.typeParamsText, cls.typeParams, surface);
-    if (fillers.length > 0) requiredArgFillers.set(name, fillers);
-  }
-  // 导入类的形参个数要看被导入模块，模块面拿不到 ⇒ 只能原样（与旧口径一致）。
-  for (const name of surface.imports?.keys() ?? []) names.add(name);
-  return { names, requiredArgFillers };
-}
+
 
 /** 类型形参子句里的形参名（`<T, U extends X = Y>` ⇒ `["T","U"]`） */
 
@@ -277,22 +266,7 @@ function mergeTypeParamClauses(srcClause: string, derived: readonly string[]): s
  * `T extends (x: number) => string` 的 `=` 属于箭头类型：按裸 `=` 切分会把它
  * 误判成「有默认值 ⇒ 可省」⇒ 裸类名不补实参（TS2314）。
  */
-function typeParamHasDefault(text: string): boolean {
-  let depth = 0;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]!;
-    if (ch === "<" || ch === "(" || ch === "[" || ch === "{") depth++;
-    else if (
-      (ch === ">" && text[i - 1] !== "=") ||
-      ch === ")" ||
-      ch === "]" ||
-      ch === "}"
-    ) {
-      depth--;
-    } else if (ch === "=" && depth === 0 && text[i + 1] !== ">") return true;
-  }
-  return false;
-}
+
 
 /**
  * 裸类名的**必填**类型形参占位实参（BUG-040 + 约束修正）。
@@ -304,38 +278,7 @@ function typeParamHasDefault(text: string): boolean {
  *   其它形参）⇒ 约束原文（`C<string>`）；
  * - 否则 ⇒ `any`（满足任意约束；比让整份产物编译失败可诊断）。
  */
-function requiredTypeArgFillers(
-  clause: string | undefined,
-  names: readonly string[] | undefined,
-  surface: DtsModuleSurface | undefined,
-): string[] {
-  const fallback = (): string[] => (names ?? []).map(() => "unknown");
-  if (!clause) return fallback();
-  const trimmed = clause.trim();
-  if (!/^</.test(trimmed)) return fallback();
-  const lastClose = trimmed.lastIndexOf(">");
-  const inner = trimmed.slice(1, lastClose >= 0 ? lastClose : undefined);
-  const ownNames = new Set(names ?? typeParamNamesInClause(clause));
-  const out: string[] = [];
-  for (const part of splitTopLevel(inner, ",")) {
-    const text = part.trim();
-    if (text === "") continue;
-    // 有默认值的形参可省略 ⇒ 不补实参（`class Box<T = string>` 裸名合法）
-    if (typeParamHasDefault(text)) continue;
-    const m = /^(?:(?:const|in|out)\s+)*[A-Za-z_$][\w$]*\s+extends\s+([\s\S]+)$/.exec(text);
-    const constraint = m?.[1]?.trim();
-    if (!constraint) {
-      out.push("unknown");
-      continue;
-    }
-    // 引用本类其它形参（`U extends T`）在裸名使用点不在作用域里 ⇒ any。
-    const selfContained = annotationTypeRefs(constraint).every(
-      (n) => !ownNames.has(n) && isTypeNameResolvable(n, surface),
-    );
-    out.push(selfContained ? constraint : "any");
-  }
-  return out;
-}
+
 
 /**
  * brand 名 → TS 类型串（内建泛型补实参；用户类原样；非法名 → unknown）。
