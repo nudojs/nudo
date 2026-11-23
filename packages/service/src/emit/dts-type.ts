@@ -106,7 +106,12 @@ export type DtsType =
   | { kind: "intersection"; members: DtsType[] }
   | { kind: "generic"; name: string; args: DtsType[] }
   | { kind: "named"; text: string }
-  | { kind: "raw"; text: string }
+  /** 源码注解原文（覆盖返回位；无法结构化解析） */
+  | { kind: "annotated"; text: string }
+  /** 环 / 超深截断（打印合法注释标记） */
+  | { kind: "truncated"; reason: "cycle" | "depth" }
+  /** 需要括号的嵌套类型（数组 / rest / 可选位） */
+  | { kind: "group"; inner: DtsType }
   | { kind: "template"; parts: Array<{ fixed?: string; type?: DtsType }> }
   | {
       kind: "fn";
@@ -226,8 +231,8 @@ function iteratorDtsType(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
 export function dtsTypeOfAbs(a: Abs, opts: DtsTypeOpts = {}): DtsType {
   const budget = opts.budget ?? new ProjectionBudget();
   const stop = budget.enter(a);
-  if (stop === "cycle") return { kind: "raw", text: TS_TRUNC.cycle };
-  if (stop === "depth") return { kind: "raw", text: TS_TRUNC.depth };
+  if (stop === "cycle") return { kind: "truncated", reason: "cycle" };
+  if (stop === "depth") return { kind: "truncated", reason: "depth" };
   try {
     const out = dtsTypeOfAbsInner(a, { ...opts, budget });
     // BUG-392：frozen 对象按 Readonly<T> 发布（数组 / 元组已在节点上 readonly）。
@@ -248,7 +253,7 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType {
   // 类型变量：shape any + term var（α / B:param）。
   if (a.shape.k === "any" && a.term?.op === "var") {
     const mapped = opts.typeVars?.get(a.term.id);
-    if (mapped !== undefined) return { kind: "raw", text: mapped };
+    if (mapped !== undefined) return { kind: "named", text: mapped };
   }
   // 模板字面量类型：pred 承载 parts，必须先于「收窄 pred ⇒ 回落」处理。
   if (a.shape.k === "prim" && a.shape.type === "string" && isTemplateLike(a)) {
@@ -393,7 +398,7 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType {
             const t = dtsTypeOfAbs(slot.value, opts);
             elements.push(
               t.kind === "union" || t.kind === "fn"
-                ? { kind: "raw", text: `(${renderDtsType(t)})` }
+                ? { kind: "group", inner: t }
                 : t,
             );
           }
@@ -479,7 +484,11 @@ function objectSlotOf(
         ? dtsTypeOfAbs(slot.value.shape.returnType, opts)
         : undefined;
       const override = opts.symbolReturnOverrides?.get(k);
-      const ret = fromAbs ?? (override !== undefined ? { kind: "raw" as const, text: override } : { kind: "unknown" as const });
+      const ret =
+        fromAbs ??
+        (override !== undefined
+          ? { kind: "annotated" as const, text: override }
+          : { kind: "unknown" as const });
       return { key: sym, symbol: true, type: { kind: "fn", params: [], returnType: ret } };
     }
     return { key: sym, symbol: true, type: dtsTypeOfAbs(slot.value, opts) };
@@ -503,7 +512,7 @@ function objectSlotOf(
   if (t.kind === "fn") {
     const override = opts.objectFnReturnOverrides?.get(k);
     if (override !== undefined) {
-      t = { ...t, returnType: { kind: "raw", text: override } };
+      t = { ...t, returnType: { kind: "annotated", text: override } };
     }
   }
   return { key: formatObjectKey(k), type: t, ...flags };
@@ -676,21 +685,25 @@ export function renderDtsType(t: DtsType): string {
       return `\`${t.parts
         .map((p) => {
           if (p.fixed !== undefined) return p.fixed;
-          const text = renderDtsType(p.type!);
+          const part = p.type!;
           const safe =
-            text === TS_TRUNC.cycle
-              ? TS_TRUNC.cycleTpl
-              : text === TS_TRUNC.depth
-                ? TS_TRUNC.depthTpl
-                : text;
+            part.kind === "truncated"
+              ? part.reason === "cycle"
+                ? TS_TRUNC.cycleTpl
+                : TS_TRUNC.depthTpl
+              : renderDtsType(part);
           return `\${${safe}}`;
         })
         .join("")}\``;
     case "generic":
       return `${t.name}<${t.args.map(renderDtsType).join(", ")}>`;
     case "named":
-    case "raw":
+    case "annotated":
       return t.text;
+    case "truncated":
+      return t.reason === "cycle" ? TS_TRUNC.cycle : TS_TRUNC.depth;
+    case "group":
+      return `(${renderDtsType(t.inner)})`;
     case "fn": {
       const params = t.params.map((p) => `${p.name}: ${renderDtsType(p.type)}`);
       return `(${params.join(", ")}) => ${renderDtsType(t.returnType)}`;
