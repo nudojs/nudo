@@ -114,6 +114,12 @@
 | ~~BUG-420~~ | `.d.ts` 声明签名允许解构默认值形参带 `?`：`patternOptional` 去掉 `!boundCovered`，观测签名同步 | `tmp/eradicate/policy/b420.ts`：`opt({ a }?: { a: number })` / `req({ a }: …)` |
 | ~~BUG-453~~ | 非导出 enum 也发射模块局部 `declare enum`；enum 类型名一律登记为可解析 | `tmp/eradicate/policy/b453.ts`：`f(): E` + `declare enum E { A = 0 }`；自编译 / 消费方 exit 0 |
 | ~~BUG-457~~ | 同名 namespace 成员合并（不再后写覆盖） | `tmp/eradicate/policy/b457.ts`：`namespace N { f(); b: 2 }` 两块成员都在 |
+| BUG-438（部分） | `$fnVal` opts 增 `paramTypes` / `returnType`；函数表达式从旁路注解序列化签名 | `tmp/eradicate/policy/b438.ts`：`makeAdderArrowAnn` / `retParam` / `makeObj` / `adderConst` / `retAnonFnExpr` 的 dts 签名正确；**残余**：`makeAdder`（无返回注解）返回仍 `unknown`，`retNamed`（具名函数引用）仍 `(arg0) => unknown` |
+| BUG-482（部分） | `objectFnMemberAnnotations` 的计算键解析补 `[k]`（const 字面量）/ `["dyn"]` / `[1]`；带注解的计算键成员保留签名 | `tmp/eradicate/policy/b482.ts`：`o10: { dyn: (x: number) => string }` ✅；**残余**：`o` / `o9`（无返回注解）仍 `() => unknown`，依赖 438 的返回证据 |
+| ~~BUG-429~~ | `valueTypeTextOfInit` 的 `typeof` 只对导出名生效；模块局部标识符用初始化式放宽类型文本 | `tmp/eradicate/policy/b429.ts`：`obj: { name: string; port: number }` / `aliasExported: { fn: typeof TARGET }`；自编译 exit 0 |
+| ~~BUG-475~~ | `objectFnMemberAnnotations` 递归嵌套对象（点路径）；`overlayObjectFnAnnotations` 按路径递归补洞；成员返回注解优先 | `tmp/eradicate/policy/b475b.ts`：`nested.inner.fn(x: number): string` / `deep.a.b.fn` 均保留 |
+| ~~BUG-416~~ | `overloadExportGlue` 的 `named` 分支补 `form.extras`（重载 + alias / default 导出名不消失） | `tmp/eradicate/policy/b416.ts`：`p` 两条重载 + `export { p as alias }` / `{ p as default }`；消费方 exit 0 |
+| ~~BUG-473~~ | ambient `declare function` + `export =` 补胶水行（无值/类声明可转换时） | `tmp/eradicate/policy/b473.ts`：`declare function api` + `export = api;`；自编译 exit 0 |
 | ~~BUG-434~~ | `addField` 在已有构造器写入条目时，用带注解的真实字段声明覆盖（声明证据优先） | `tmp/eradicate/policy/b434.ts`：`v: number`（不再 `unknown`） |
 | ~~BUG-435~~ | `ctorParamAbsArgs` / `classEntryPolyFn` 增构造器默认值域（`constructor(public z = 1)` ⇒ `z: number`） | `tmp/eradicate/policy/b435.ts`：`WithDefault(z: number)` / `inc() => number`，0 error |
 | ~~BUG-463~~ | 私有字段类型进 getter 观测表（不发射成员） | `tmp/eradicate/policy/b463.ts`：`#private; get value(): number` |

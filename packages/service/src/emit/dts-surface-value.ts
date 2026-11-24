@@ -8,6 +8,7 @@
 import type { DtsObjectFnAnnotation } from "./dts-ir.ts";
 import { BUILTIN_GENERIC_BRANDS } from "./dts-type.ts";
 import { formatPropKey } from "./dts-text.ts";
+import { literalConstKeysOf, surfaceComputedKeyName } from "./dts-surface-keys.ts";
 import {
   nodeAnnotationText,
   safeFieldTypeAnnotation,
@@ -26,6 +27,7 @@ import {
 export function objectFnMemberAnnotations(
   init: SurfaceNode | undefined,
   source: string | undefined,
+  prefix = "",
 ): DtsObjectFnAnnotation[] {
   if (!init || init.type !== "ObjectExpression" || source === undefined) return [];
   const out: DtsObjectFnAnnotation[] = [];
@@ -35,22 +37,50 @@ export function objectFnMemberAnnotations(
     const isFnProp =
       (p.type === "ObjectProperty" || p.type === "Property") &&
       (v?.type === "FunctionExpression" || v?.type === "ArrowFunctionExpression");
+    // BUG-475：嵌套对象字面量递归采集，键用 `outer.inner.fn` 形式。
+    const nested = p.type === "ObjectProperty" || p.type === "Property" ? v : undefined;
+    if (nested?.type === "ObjectExpression") {
+      const nestedKey = p.computed === true
+        ? surfaceSymbolKeyName(p.key as SurfaceNode | undefined)
+        : surfaceName(p.key as SurfaceNode | undefined);
+      if (nestedKey) {
+        out.push(
+          ...objectFnMemberAnnotations(
+            nested,
+            source,
+            prefix ? `${prefix}.${nestedKey}` : nestedKey,
+          ),
+        );
+      }
+      continue;
+    }
     if (!isMethod && !isFnProp) continue;
     // BUG-236：计算 symbol 键（`[Symbol.iterator]() { … }`）的成员注解同样
     // 要补进 Abs——否则 symbol 成员行只能发 `unknown`，消费方 `[...obj]` 仍
     // 被 TS2488 挡住（可迭代判定要的是迭代器返回类型）。
     const key =
       p.computed === true
-        ? surfaceSymbolKeyName(p.key as SurfaceNode | undefined)
+        ? surfaceSymbolKeyName(p.key as SurfaceNode | undefined) ??
+          (() => {
+            // BUG-482：`[k]`（const 字面量）/ `["dyn"]` / `[1]` 的计算键与值
+            // 通道同一套静态折名规则；解析不到（真动态键）才不采集。
+            const keyNode = p.key as SurfaceNode | undefined;
+            if (keyNode?.type === "Identifier" && typeof keyNode.name === "string") {
+              const literal = literalConstKeysOf(source).get(keyNode.name);
+              if (literal !== undefined) return literal;
+            }
+            return surfaceComputedKeyName(keyNode);
+          })()
         : surfaceName(p.key as SurfaceNode | undefined);
     if (!key) continue;
+    const fullKey = prefix ? `${prefix}.${key}` : key;
     const fnNode = (isMethod ? p : v) as SurfaceNode;
     const rawParams = (fnNode.params as SurfaceNode[] | undefined) ?? [];
     const paramTypes = rawParams.map((n) => nodeAnnotationText(n, source));
     const returnType = nodeAnnotationText(fnNode, source);
     if (!paramTypes.some((t) => t !== undefined) && returnType === undefined) continue;
     out.push({
-      key,
+      key: fullKey,
       paramTypes,
       rest: rawParams.map((n) => n.type === "RestElement"),
       ...(returnType !== undefined ? { returnType } : {}),
@@ -107,6 +137,7 @@ export function valueTypeTextOfInit(
   source?: string,
   isKnownValue?: (name: string) => boolean,
   isResolvable?: (name: string, valuePosition?: boolean) => boolean,
+  localTypeTextOf?: (name: string) => string | undefined,
 ): string {
   if (!init) return "unknown";
   if (init.type === "ObjectExpression") {
@@ -152,7 +183,7 @@ export function valueTypeTextOfInit(
       }
       const v = (p.value ?? undefined) as SurfaceNode | undefined;
       parts.push(
-        `${k}: ${v ? valueTypeTextOfInit(v, source, isKnownValue, isResolvable) : "unknown"}`,
+        `${k}: ${v ? valueTypeTextOfInit(v, source, isKnownValue, isResolvable, localTypeTextOf) : "unknown"}`,
       );
     }
     return parts.length > 0 ? `{ ${parts.join("; ")} }` : "object";
@@ -162,7 +193,7 @@ export function valueTypeTextOfInit(
       (e): e is SurfaceNode => !!e,
     );
     const types = [
-      ...new Set(elems.map((e) => valueTypeTextOfInit(e, source, isKnownValue, isResolvable))),
+      ...new Set(elems.map((e) => valueTypeTextOfInit(e, source, isKnownValue, isResolvable, localTypeTextOf))),
     ];
     if (types.length === 0) return "unknown[]";
     return types.length === 1 ? `${types[0]}[]` : `(${types.join(" | ")})[]`;
@@ -172,8 +203,12 @@ export function valueTypeTextOfInit(
   if (init.type === "Identifier") {
     const name = surfaceName(init);
     if (name === "undefined") return "undefined";
+    // 只有**导出**的本地值才能在产物里写 `typeof X`（BUG-429）；模块局部
+    // 绑定没有声明 ⇒ TS2552/TS2304。局部的字面量 / 对象初始化式用其类型
+    // 文本（string / number / {...}），拿不到才 unknown。
     if (name && isKnownValue?.(name) === true) return `typeof ${name}`;
-    return "unknown";
+    const local = name ? localTypeTextOf?.(name) : undefined;
+    return local ?? "unknown";
   }
   if (init.type === "NewExpression") {
     return newExpressionTypeText(init, source);

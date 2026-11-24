@@ -51,11 +51,70 @@ import { emitTranspileExpression as transpileExpression } from "../transpile-dis
 import { transpileFnBodyStmts } from "../stmt/fn-body.ts";
 import { asyncBodyPlan } from "../async-plan.ts";
 import { classSpecOf } from "../class-emit.ts";
+import { abs } from "../../../abs.ts";
+import {
+  absTypeForTsTypeText,
+  entryAbsLiteralSourceOf,
+  namedTypeTextsForSource,
+  resolveNamedTypeText,
+} from "../../../contract/ts-type-shape.ts";
 /** 参数模式名集（var 提升边界扣除）——stmt.ts paramNamesOf 的 expr 侧副本 */
 export function paramNamesOfFn(params: Node[]): ReadonlySet<string> {
   const acc = new Set<string>();
   for (const p of params) collectPatternNames(p, acc);
   return acc;
+}
+
+/**
+ * BUG-438：函数表达式的源码注解 → `$fnVal` 的 `paramTypes` / `returnType`。
+ *
+ * 先前所有 `$fnVal` 出口都不带签名 ⇒ 返回 / 值位置的箭头 / 匿名函数在 dts
+ * 里只剩 `(x: unknown) => unknown`。这里从剥除旁路读回形参 / 返回注解，
+ * 序列化成 Abs 源码拼进 opts；无注解的位置用 `any`（与入口未约束参同口径）。
+ */
+function fnTypeOptsSrc(
+  fn: { params?: Node[]; nudoReturnTypeText?: string },
+  opts: TranspileOptions,
+): string {
+  const named = opts.source ? namedTypeTextsForSource(opts.source) : undefined;
+  const params = fn.params ?? [];
+  const parts: string[] = [];
+  let anyParam = false;
+  for (const p of params) {
+    const raw = p as {
+      type?: string;
+      nudoTypeText?: string;
+      left?: Node;
+      argument?: Node;
+    };
+    const text =
+      raw.nudoTypeText ??
+      (raw.type === "AssignmentPattern"
+        ? (raw.left as { nudoTypeText?: string } | undefined)?.nudoTypeText
+        : undefined) ??
+      (raw.type === "RestElement"
+        ? (raw.argument as { nudoTypeText?: string } | undefined)?.nudoTypeText
+        : undefined);
+    const mapped = text
+      ? absTypeForTsTypeText(resolveNamedTypeText(text, named))
+      : undefined;
+    const src = mapped ? entryAbsLiteralSourceOf(mapped) : undefined;
+    if (src !== undefined) {
+      parts.push(src);
+      anyParam = true;
+    } else {
+      parts.push(entryAbsLiteralSourceOf(abs({ k: "any" }, undefined, undefined, "path")) ?? "undefined");
+    }
+  }
+  const retText = fn.nudoReturnTypeText;
+  const retAbs = retText
+    ? absTypeForTsTypeText(resolveNamedTypeText(retText, named))
+    : undefined;
+  const retSrc = retAbs ? entryAbsLiteralSourceOf(retAbs) : undefined;
+  if (!anyParam && retSrc === undefined) return "";
+  return `${anyParam ? `paramTypes: [${parts.join(", ")}], ` : ""}${
+    retSrc !== undefined ? `returnType: ${retSrc}, ` : ""
+  }`;
 }
 
 /**
@@ -299,6 +358,7 @@ export function transpileFunctionExpr(
       // 不是宿主绑定 sig（默认参是 `_p{i}` 占位，rest 不在 sig 里）。
       // 异步 body 包 $async 保持 eff(promise) 语义（裸 JS async 会泄漏 Promise）。
       const nameList = `[${paramDisplayNames(fn.params).map((p) => JSON.stringify(p)).join(", ")}]`;
+      const typeOpts = fnTypeOptsSrc(fn, opts);
       // Bug 399：逐位「可省略」标记（默认形参 / `?` / rest）——必选元数不再靠
       // 名字后缀猜（默认形参在形参表面是**光秃秃的名字** ⇒ 被计成必选 ⇒
       // `nudo:assign-mismatch` 假红；JS 语义下 `(x = 1) => x` 可零参调用）。
@@ -426,14 +486,14 @@ export function transpileFunctionExpr(
               : `function (${argsParamParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
             : `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
-          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
+          return `$fnVal(${nameList}, ${wrap}, { ${typeOpts}ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
         }
         if (fn.async && !fn.generator) {
           // Bug 201：async 体走生成器路径 ⇒ 表达式体提升进 `function*(){…}`
           //（箭头表达式体不是生成器——`yield` 会是语法错误）
-          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${asyncGen ? `$asyncGen(function* () {\n${inner}\n})` : `$async(() => {\n${inner}\n})`}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
+          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${asyncGen ? `$asyncGen(function* () {\n${inner}\n})` : `$async(() => {\n${inner}\n})`}, { ${typeOpts}ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
         }
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ${typeOpts}ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
       }
       const bodySrc = transpileExpression(fn.body as Expression, fnBodyOpts);
       // Bug 188：表达式体的**写回**（rebinds）不得排在表达式求值之前。
@@ -479,21 +539,21 @@ export function transpileFunctionExpr(
             ? `function (${argsParamParts.join(", ")}) {\n${genHoistPrologue.join("\n")}\n${inner}\n}`
             : `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
-          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
+          return `$fnVal(${nameList}, ${wrap}, { ${typeOpts}ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
         }
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ${typeOpts}ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
       }
       // 表达式体：块体包裹跑语句级 rebind pass——`()=>n++` / `()=>a.push(1)`
       // 的写回此前静默丢失（表达式上下文无语句级扫描）
       if (rebinds.length > 0) {
         const inner = retSeq("  ").join("\n");
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ${typeOpts}ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
       }
       if (fn.async) {
         // Bug 201：生成器路径 ⇒ 表达式体提升进 `function*(){…}`
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${asyncGen ? `$asyncGen(function* () {\nreturn ${bodySrc};\n})` : `$async(() => ${bodySrc})`}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${asyncGen ? `$asyncGen(function* () {\nreturn ${bodySrc};\n})` : `$async(() => ${bodySrc})`}, { ${typeOpts}ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
       }
-      return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
+      return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc}, { ${typeOpts}ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${predicateSrc}${kindSrc}${optionalSrc}${emptyBodySrc} })`;
       })();
       if (!nfeName) return fnValSrc;
       // IIFE 绑定 NFE 自身名：调用期 g 已是 fn Abs（体内引用按词法捕获）；

@@ -518,7 +518,8 @@ describe("入口注解证据进 dts（默认值 / 整参默认解构 / 可选形
       "/test/b241-dts.ts",
       `export function dd3({ a }: { a: number } = { a: 1 }): string { return a.toFixed(); }\n`,
     );
-    expect(out).toContain("{ a }: { a: number }");
+    // BUG-420：声明签名允许带默认值的解构形参带 `?`（tsc 同形）。
+    expect(out).toContain("{ a }?: { a: number }");
     expect(out).not.toContain("_p0?: unknown");
   });
 

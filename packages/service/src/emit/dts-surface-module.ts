@@ -738,6 +738,8 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
   // BUG-258：顶层值名（`typeof target` 只对真正存在的绑定成立）——在值声明
   // 扫描之前一次性收集，避免把局部 / 未声明名字写成 TS2304。
   const knownTopLevelValues = new Set<string>();
+  /** BUG-429：模块局部值 → 初始化式节点（`typeof` 不可写时取放宽后的类型）。 */
+  const localValueInits = new Map<string, SurfaceNode>();
   for (const stmt of body) {
     const decl =
       stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
@@ -797,7 +799,13 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
         // 引用 / 显式泛型实参）。只对单标识符绑定采集。
         const initTypeText =
           idNode?.type === "Identifier"
-            ? valueTypeTextOfInit(init, source, (n) => knownTopLevelValues.has(n))
+            ? valueTypeTextOfInit(
+                init,
+                source,
+                (n) => knownTopLevelValues.has(n) && dtsExportNamesOf(surface, n).length > 0,
+                undefined,
+                (n) => localValueTypeText(n),
+              )
             : undefined;
         // BUG-263：用户符号成员键（`{ [tag]: 1 }`）的源码名。
         const userSymbolKeys =
@@ -906,6 +914,36 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       });
     }
   };
+  // BUG-429：先收集模块局部值的初始化式，供 `{ name: LOCAL }` 的对象 / 数组
+  // 成员投影使用（局部名不能写 `typeof LOCAL`，但可以写它的字面量放宽类型）。
+  for (const stmt of body) {
+    const decl =
+      stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
+        ? (stmt.declaration as SurfaceNode | undefined)
+        : stmt;
+    if (decl?.type !== "VariableDeclaration") continue;
+    for (const d of (decl.declarations as SurfaceNode[] | undefined) ?? []) {
+      const id = d.id as SurfaceNode | undefined;
+      const init = d.init as SurfaceNode | undefined;
+      if (id?.type === "Identifier" && typeof id.name === "string" && init) {
+        localValueInits.set(id.name, init);
+      }
+    }
+  }
+  function localValueTypeText(name: string, seen: Set<string> = new Set()): string | undefined {
+    if (seen.has(name)) return undefined;
+    const init = localValueInits.get(name);
+    if (!init) return undefined;
+    seen.add(name);
+    return valueTypeTextOfInit(
+      init,
+      source,
+      (n) => knownTopLevelValues.has(n) && dtsExportNamesOf(surface, n).length > 0,
+      undefined,
+      (n) => localValueTypeText(n, seen),
+    );
+  }
+
   for (const stmt of body) {
     if (stmt.type === "VariableDeclaration" || stmt.type === "TSEnumDeclaration") {
       noteValueDecl(stmt);
