@@ -394,10 +394,13 @@ async function runExport(
     // ⇒ 门禁与产物相反裁决，产物拒收实现自己的合法返回值。生成档不进公开
     // 面：回落分析面 Abs（真实可接受域的观测近似）。
     const eff = declared?.source === "generated" ? undefined : declared;
-    // 契约面上下文（契约域种子重算 / 违约复核需要源码与路径）
+    // 契约面上下文（契约域种子重算 / 违约复核需要源码与路径）。`surface`
+    // 透传上面算好的**同一份** `dtsSurface`：校验器面的返回注解可解析判据与
+    // dts 签发面（`dtsFaceEntry`）必须同源，不重算。
     const faceCtx = {
       source,
       filePath,
+      surface: dtsSurface,
       ...(evalMocks ? { mocks: evalMocks } : {}),
     };
     const paramExps = arrayPatternParamFaces(fn, unifiedParamFace(fn, eff, caseResults));

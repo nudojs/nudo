@@ -19,8 +19,11 @@ import {
   computeMainSignature,
   contractOnlySignature,
   contractReturnTSType,
+  isDeclaredReturnPublished,
   returnAnnotationMismatch,
   thisReceiverClause,
+  tsDeclaredReturn,
+  tsReturnPredicate,
   typeParamDecls,
   type DtsContractFace,
   type DtsFunctionProjection,
@@ -95,14 +98,12 @@ export function projectFunctionDts(
     },
     () => projectFunctionDtsInner(fn, contract, ctx),
   );
-  // 「第三种」：声明 vs 观测，**只落台账、绝不覆盖产物**。手写契约覆盖返回位
-  // 时跳过（那是第三来源，不参与「实现 vs 声明」的比较）；无 combinedAbs
-  // 时没有观测可判。
-  if (!contract?.return && fn.declaredReturnType && fn.combinedAbs) {
-    const mismatch = returnAnnotationMismatch(
-      fn.declaredReturnType,
-      absToTSTypeIr(fn.combinedAbs),
-    );
+  // 「第三种」：返回位有声明注解 ⇒ 产物发布声明；声明与观测冲突**只落台账、
+  // 不改发布类型**。手写契约覆盖返回位时跳过（那是第三来源，不参与「实现
+  // vs 声明」的比较）；注解被丢弃（类型名不可解析）时产物已是观测，无对账
+  // 可言；无 combinedAbs 时没有观测可判。
+  if (!contract?.return && fn.combinedAbs && isDeclaredReturnPublished(fn, ctx)) {
+    const mismatch = returnAnnotationMismatch(fn, absToTSTypeIr(fn.combinedAbs), ctx);
     if (mismatch) ctx.mismatches?.push({ name: fn.name, ...mismatch });
   }
   const typeRefs = [...(ctx.typeRefs ?? [])];
@@ -114,7 +115,7 @@ export function projectFunctionDts(
     ),
     ...(ctx.mismatches ?? []).map(
       (m) =>
-        `// nudo:return-annotation-mismatch ${m.name} — declared element "${m.declared}", observed "${m.observed}"; kept the observed type`,
+        `// nudo:return-annotation-mismatch ${m.name} — declared ${m.declared}, observed ${m.observed}; published the declared type`,
     ),
   ];
   if (typeRefs.length === 0 && ledger.length === 0) return proj;
@@ -280,7 +281,9 @@ export function dtsFunctionDeclaration(
 
   if (fn.skipped || fn.cases.length === 0) {
     // skipped / entryOnly / 无 case 函数：只有声明或 combined 返回类型已知，
-    // 保持历史行为——rest-args 形式，combined（含 Promise<T>）原样输出。
+    // 保持历史行为——rest-args 形式。返回位有声明注解 ⇒ 发布声明（与有 case
+    // 的函数同口径，`tsDeclaredReturn`）；注解不可解析 / 未声明 ⇒ combined
+    // （含 Promise<T>）原样输出。
     // #176：skip 即使带 @nudo:case（运行时见证已照常求值）也走声明面——
     // combinedAbs 来自 @nudo:skip => 声明，case 不参与 dts 面合成。
     // 例外：手写契约参数位是申报面的一部分，具名投影。
@@ -312,21 +315,17 @@ export function dtsFunctionDeclaration(
         params: sig.paramNames.map((name, i) => ({ name, type: sig.paramTypes[i]! })),
       };
     }
-    const retAbs = fn.combinedAbs;
-    if (retAbs) {
-      return {
-        lines: dtsExportDeclaration(form, `(...args: unknown[]): ${absToTSTypeIr(retAbs)}`),
-        // rest-args 声明面无具名参数位可提示（skip = 开发者主动退出推断）
-        params: [],
-      };
-    }
-    // BUG-079：`@nudo:skip` 且**未声明返回类型**（combinedAbs 为 null）时，
-    // 旧实现 `return { lines: [] }` ⇒ 该导出被**整条从产物里删掉**（不是降级
-    // 成 any），而 `nudo check`（core checkSource）为同一函数合成 `any`
-    // ⇒ 两面结论相反、消费端 `import { boom }` 直接 TS2305。
-    // ⇒ 与 check 同源；TS 投影面按 2026-11-06 归一：无约束 any → TS unknown。
+    // 返回位兜底到 `unknown` 而不是整条不发射：BUG-079 的旧实现 `return
+    // { lines: [] }` 会让该导出被**从产物里删掉**，而 `nudo check` 为同一函数
+    // 合成 `any` ⇒ 两面结论相反、消费端 `import { boom }` 直接 TS2305；TS 投影
+    // 面按 2026-11-06 归一：无约束 any → TS unknown。
+    const returnType =
+      tsDeclaredReturn(fn, ctx) ??
+      tsReturnPredicate(fn, ctx) ??
+      (fn.combinedAbs ? absToTSTypeIr(fn.combinedAbs) : "unknown");
     return {
-      lines: dtsExportDeclaration(form, `(...args: unknown[]): unknown`),
+      lines: dtsExportDeclaration(form, `(...args: unknown[]): ${returnType}`),
+      // rest-args 声明面无具名参数位可提示（skip = 开发者主动退出推断）
       params: [],
     };
   }

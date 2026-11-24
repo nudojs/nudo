@@ -12,7 +12,6 @@
 
 import { isBuiltin } from "node:module";
 import { parseSource as parse } from "../parse-source.ts";
-import { resolveEntryFace } from "../scan/entry-face-shadow.ts";
 import { identBoundaryRegex, stripStringsKeepComments } from "../format/code-text.ts";
 import { extractFileEnvNames } from "../directive-scan.ts";
 import {
@@ -109,12 +108,13 @@ import {
   suggestedForkCeiling,
 } from "./check-report.ts";
 import type { PolyFn } from "../generalize.ts";
-import { listTopFunctions, scanLiteralCalls } from "../scan/scan.ts";
+import { scanLiteralCalls } from "../scan/scan.ts";
 // Bug 1096：**类导出入口**（`new C()`）是真实的 L2 入口——构造器必抛必须能
-// 归因到它（否则构造器证据被丢弃 ⇒ 闸门假绿）。`listClassEntryNames` 与
-// `listTopFunctions` 是**两个普查面**（后者是函数普查面，与 service 面
-// `collectTopLevelFunctions` 逐字对齐，不能改它）⇒ 单独取类清单并入入口表。
+// 归因到它（否则构造器证据被丢弃 ⇒ 闸门假绿）。入口表本身读语义索引
+// （唯一来源）；这里只取「名字在源码里有类声明面」的判据（synthetic 分支
+// 决定是否给签名行）。
 import { listClassEntryNames } from "../scan/scan-top-functions.ts";
+import { buildSemanticIndex, SUPPLEMENTARY_ENTRY_FORMS } from "../scan/semantic-index.ts";
 import {
   contractDriftIssues,
   type DriftCandidate,
@@ -318,21 +318,20 @@ function checkSourceInScope(
 
   const issues: CheckIssue[] = [];
   const signatures: NudoSig[] = [];
-  // 单次 parse：listTopFunctions / generalize / analyzeFn / scan 共用
+  // 单次 parse：语义索引 / generalize / analyzeFn / scan 共用
   const file = parse(source);
-  // Bug 1096：类导出入口（`new C()`）并入 L2 入口表——构造器必抛有了真实
-  // 归因落点（此前构造器证据被丢弃 ⇒ 闸门假绿）。
-  const oldNames = [
-    ...listTopFunctions(source, file),
-    ...listClassEntryNames(source, file),
-  ];
-  // ADR 0001 阶段 3：索引是唯一入口面；旧普查名只补索引缺口。
-  const names = resolveEntryFace(file, oldNames);
-  // D1：只有「索引相对旧普查面**新增**」的名字才是新的导出槽形态。
+  // ADR 0001 阶段 3：索引是唯一入口面（登记序 = 签名序）。下游
+  // （scanLiteralCalls / scanCaseInconsistency）的形参是可变数组类型 ⇒
+  // 传副本，索引缓存里的那张表不外流。
+  const index = buildSemanticIndex(file);
+  const names: string[] = [...index.entries];
+  // D1：只有索引**独有规则**登记的名字才是新的导出槽形态（BUG-002 的
+  // `exports.greet = boom`、匿名默认导出类、迟绑定对象导出……）。
   // 整个 names 含顶层非导出函数声明，全量并入会让内部函数的 any 操作被
-  // 当导出入口执法（check-recall-gold 17 条假红）⇒ 只传增量。
-  const oldNameSet = new Set(oldNames);
-  const addedNames = names.filter((n) => !oldNameSet.has(n));
+  // 当导出入口执法（check-recall-gold 17 条假红）⇒ 只传索引独有形态。
+  const addedNames = index.entryInfos
+    .filter((e) => SUPPLEMENTARY_ENTRY_FORMS.has(e.form))
+    .map((e) => e.name);
 
   // 侧车路径登记进 memo 依赖：`*.nudo.js` 变更后定向逐出
   const memoPaths =

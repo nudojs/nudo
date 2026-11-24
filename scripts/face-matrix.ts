@@ -105,6 +105,94 @@ export function f(): E { return E.A; }` },
     src: `export abstract class A { abstract get x(): number; }` },
   { name: "error-subclass", dts: ["extends Error", "code: number;"],
     src: `export class MyErr extends Error { code = 1; }` },
+  // 根因根除台账（docs/design/plans/2026-11-24-root-cause-eradication.md §3）
+  // 的修复证据：声明返回 / 值通道 / 导出胶水 / 模块面 / 入口域的构造。
+  { name: "overload-export-alias", dts: ["p(x: string): string;", "p(x: number): number;", "export { p as alias };"],
+    src: `export function p(x: string): string;
+export function p(x: number): number;
+export function p(x: string | number): string | number { return x; }
+export { p as alias };
+export default p;` },
+  { name: "keyof-alias-index-return", dts: ["keyRet(u: User): keyof User;", "idxRet(u: User): User[\"name\"];", "aliasRet(u: User): K;", "unionRet(u: User): \"name\" | \"age\";"],
+    src: `export interface User { name: string; age: number }
+export type K = keyof User;
+export function keyRet(u: User): keyof User { return "name"; }
+export function idxRet(u: User): User["name"] { return u.name; }
+export function aliasRet(u: User): K { return "age"; }
+export function unionRet(u: User): "name" | "age" { return "age"; }` },
+  { name: "class-union-return", dts: ["inst(x: boolean): string | number;", "static stat(x: boolean): string | number;"],
+    src: `export class C {
+  inst(x: boolean): string | number { return x ? "a" : 1; }
+  static stat(x: boolean): string | number { return x ? "a" : 1; }
+}` },
+  { name: "module-local-typeof-value", dts: ["obj: { name: string; port: number", "aliasLocal: { fn: string", "arr: (string | number)[];"],
+    src: `const NAME = "svc";
+const PORT = 8080;
+export const TARGET = "exported";
+export const obj = { name: NAME, port: PORT };
+export const aliasLocal = { fn: NAME };
+export const aliasExported = { fn: TARGET };
+export const arr = [NAME, PORT];` },
+  { name: "class-field-after-constructor", dts: ["v: number;"],
+    src: `export class A {
+  constructor() { this.v = 1; }
+  v: number;
+}` },
+  { name: "annotated-function-expression-return", dts: ["makeAdderArrowAnn(n: number): (x: number) => number;", "retParam(f: (x: number) => string): (x: number) => string;", "makeObj(n: number): { add: (x: number) => number", "retAnonFnExpr(): (x: number) => number;"],
+    src: `export function makeAdderArrowAnn(n: number) { return (x: number): number => x + n; }
+export function retParam(f: (x: number) => string) { return f; }
+export function makeObj(n: number) { return { add: (x: number): number => x + n }; }
+export function retAnonFnExpr() { return function (x: number): number { return x * 2; }; }` },
+  { name: "declared-object-supertype-return", dts: ["g(): { a?: number; b: string", "f(): { [k: string]: number", "r(): { readonly a: number"],
+    src: `export function g(): { a?: number; b: string } { return { b: "s" }; }
+export function f(): { [k: string]: number } { return { a: 1 }; }
+export function r(): { readonly a: number } { return { a: 1 }; }` },
+  { name: "promise-void-return", dts: ["v(): Promise<void>;"],
+    src: `export async function v(): Promise<void> { return; }` },
+  { name: "namespace-merge-value", dts: ["function f(): number;", "const b", "function g(): string;"],
+    src: `export namespace N {
+  export function f(): number { return 1; }
+}
+export namespace N {
+  export const b = 2;
+}
+export namespace N {
+  export function g(): string { return "s"; }
+}` },
+  { name: "async-empty-array-return", dts: ["empty(): Promise<string[]>;"],
+    src: `export async function empty(): Promise<string[]> { return []; }` },
+  { name: "ambient-namespace-members", dts: ["const retries: number;", "function describe(): string;"],
+    src: `export declare namespace Settings {
+  const retries: number;
+  function describe(): string;
+}` },
+  { name: "private-field-getter", dts: ["#private;", "get value(): number;"],
+    src: `export class Box {
+  #v = 0;
+  get value() { return this.#v; }
+}` },
+  { name: "nested-object-method-annotation", dts: ["nested: { inner: { fn: (x: number) => string } };", "deep: { a: { b: { fn: (x: number) => string } } };"], oracle: false,
+    src: `export const nested = { inner: { fn(x: number): string { return String(x); } } };
+export const deep = { a: { b: { fn(x: number): string { return String(x); } } } };` },
+  { name: "array-of-function-return", dts: ["fns(): Array<(x: number) => string>;"],
+    src: `export function fns(): Array<(x: number) => string> { return [(x) => String(x)]; }` },
+  { name: "constructor-function-type", check: ["viaNew(C: (number) => { a: number }) => number", "viaAlias(C: (number) => { a: number }) => number"], checkNot: ["never", "throws TypeError"],
+    dts: ["viaNew(C: new (x: number) => A): number;", "viaAlias(C: Ctor): number;"],
+    src: `export interface A { a: number }
+export type Ctor = new (x: number) => A;
+export function viaNew(C: new (x: number) => A): number { return new C(1).a; }
+export function viaAlias(C: Ctor): number { return new C(2).a; }` },
+  { name: "construct-signature-member-access", check: ["make(c: (number) => { m: () => string }) => string"], checkNot: ["never", "throws TypeError"],
+    dts: ["make(c: Ctor): string;"],
+    src: `export interface Ctor {
+  new (x: number): { m(): string };
+}
+export function make(c: Ctor): string { return new c(1).m(); }` },
+  { name: "computed-key-annotation", dts: ["o10: { dyn: (x: number) => string", "o10b: { dyn: (x: number) => string", "o11: { 1: (x: number) => string"],
+    src: `const k = "dyn";
+export const o10 = { [k]: (x: number): string => String(x) };
+export const o10b = { ["dyn"]: (x: number): string => String(x) };
+export const o11 = { [1]: (x: number): string => String(x) };` },
 ];
 
 type FailCode = "check-mismatch" | "dts-mismatch" | "dts-self-compile" | "consumer-compile" | "cli-error";

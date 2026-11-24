@@ -17,63 +17,32 @@
  *   lit term」表达，Shape 表达不了 ⇒ 只有 Abs 面（{@link absTypeForTsTypeText}）
  *   映射它们；Shape 面（{@link absShapeForTsTypeText}）保持旧口径不映射。
  */
-import type { TSType } from "@babel/types";
+import type {
+  ArrayPattern,
+  Expression,
+  Identifier,
+  ObjectPattern,
+  RestElement,
+  TSImportType,
+  TSLiteralType,
+  TSNamedTupleMember,
+  TSEntityName,
+  TSInterfaceDeclaration,
+  TSType,
+  TSTypeAliasDeclaration,
+  TSTypeAnnotation,
+  TSTypeElement,
+  TSTypeParameterInstantiation,
+} from "@babel/types";
 import { abs, withProvenance, type Abs, type Shape } from "../abs.ts";
 import { absFunction, relationFn } from "../abs-fn.ts";
 import { abstractSeqIteratorAbs } from "../builtins/error/iterator.ts";
 import { noBody } from "../builtins/shared.ts";
 import { $call } from "../exec/call.ts";
+import { absShapeKey } from "../objects.ts";
 import { parseSource } from "../parse-source.ts";
 import { lit, type Term } from "../term.ts";
-
-/**
- * Babel `TSType` 种类的**编译期穷尽表**（Phase 1 gate）。
- *
- * Babel 升级新增一个 TSType 成员时，`satisfies Record<TSType["type"], …>`
- * 立刻编译红 ⇒ 必须显式决定「节点映射」还是「明确不支持」，不会静默漏进
- * 文本 fallback。`unsupported` 的种类在 `mapTsTypeNode` 里返回 undefined
- * （条件类型 / infer / intrinsic / heritage 节点不是可投影类型面）。
- */
-export const TSTYPE_NODE_SUPPORT = {
-  TSAnyKeyword: "node",
-  TSBooleanKeyword: "node",
-  TSBigIntKeyword: "node",
-  TSIntrinsicKeyword: "unsupported",
-  TSNeverKeyword: "node",
-  TSNullKeyword: "node",
-  TSNumberKeyword: "node",
-  TSObjectKeyword: "node",
-  TSStringKeyword: "node",
-  TSSymbolKeyword: "node",
-  TSUndefinedKeyword: "node",
-  TSUnknownKeyword: "node",
-  TSVoidKeyword: "node",
-  TSThisType: "node",
-  TSFunctionType: "node",
-  TSConstructorType: "node",
-  TSTypeReference: "node",
-  TSTypePredicate: "node",
-  TSTypeQuery: "node",
-  TSTypeLiteral: "node",
-  TSArrayType: "node",
-  TSTupleType: "node",
-  TSOptionalType: "node",
-  TSRestType: "node",
-  TSNamedTupleMember: "node",
-  TSUnionType: "node",
-  TSIntersectionType: "node",
-  TSConditionalType: "unsupported",
-  TSInferType: "unsupported",
-  TSParenthesizedType: "node",
-  TSTypeOperator: "node",
-  TSIndexedAccessType: "node",
-  TSMappedType: "node",
-  TSTemplateLiteralType: "node",
-  TSLiteralType: "node",
-  TSClassImplements: "unsupported",
-  TSInterfaceHeritage: "unsupported",
-  TSImportType: "node",
-} satisfies Record<TSType["type"], "node" | "unsupported">;
+import { walkAstNodes } from "../ast-walk.ts";
 
 /**
  * 注解解析上下文（**单一解析层**的输入）。
@@ -86,11 +55,17 @@ export const TSTYPE_NODE_SUPPORT = {
 export type AnnotationEnv = {
   typeParams?: ReadonlyMap<string, Abs>;
   namedTypes?: ReadonlyMap<string, string>;
-  /** 同文件具名类型声明的**结构节点**（interface / type alias；无类型参数）。 */
+  /**
+   * 具名类型声明的**结构节点**（interface / type alias；无类型参数）：
+   * 同文件声明 + 相对导入的声明。只由 `sameFileAnnotationEnv` /
+   * `importedTypesForSource` 产出，消费方不手工拼装。
+   */
   namedTypeNodes?: ReadonlyMap<string, TsTypeNode>;
   valueTypes?: ReadonlyMap<string, string>;
-  /** inline `import("spec").T` 的声明文本，键 = `spec#T`（迁移期外置表）。 */
+  /** inline `import("spec").T` 的声明文本，键 = `spec#T`（service 的 fs 面外置）。 */
   importTypes?: ReadonlyMap<string, string>;
+  /** inline `import("spec").T` 的声明节点，键与 `importTypes` 同（节点优先）。 */
+  importTypeNodes?: ReadonlyMap<string, TsTypeNode>;
   builtins?: ReadonlyMap<string, Abs>;
   /** 内部递归深度（只由本模块递增；调用方不传）。 */
   depth?: number;
@@ -140,12 +115,19 @@ function nullishAbs(value: null | undefined): Abs {
   return abs({ k: "unknown" }, { op: "lit", value } as Term, undefined, "exact");
 }
 
-/** 元素域并集（变长位降级用）：同形去重；单成员直接返回，避免退化 sum。 */
+/**
+ * 元素域并集（变长位降级用）：同形去重；单成员直接返回，避免退化 sum。
+ *
+ * 去重键是仓库唯一的 Abs 结构键 `absShapeKey`（环安全、bigint 安全）。此前
+ * 用 `JSON.stringify({ shape, term })`：成员是函数形 Abs 时（`Map<string, M>`
+ * 的 `get: (k) => M | undefined`）relation 的 `returnType` 自引用 ⇒ 抛
+ * TypeError，整条注解映射连同 `nudo check` 进程一起崩。
+ */
 function joinAbsList(list: Abs[]): Abs {
   const unique: Abs[] = [];
   const seen = new Set<string>();
   for (const a of list) {
-    const key = JSON.stringify({ shape: a.shape, term: a.term });
+    const key = absShapeKey(a);
     if (seen.has(key)) continue;
     seen.add(key);
     unique.push(a);
@@ -234,15 +216,22 @@ function builtinTypeAbs(name: string): Abs | undefined {
   }
 }
 
-/** 泛型内建类型：`Map<K,V>` / `Set<T>` / `Promise<T>` / `Record<K,V>`。 */
+/** 泛型内建类型（文本面入口）：`Map<K,V>` / `Set<T>` / `Promise<T>` / `Record<K,V>`。 */
 function builtinGenericAbs(text: string, allowNullish: boolean): Abs | undefined {
   const m = /^([A-Za-z_$][\w$]*)\s*<([\s\S]+)>$/.exec(text.trim());
   if (!m) return undefined;
-  const name = m[1]!;
   const args = splitTypeArgs(m[2]!);
   const mapped = args.map((a) => mapTsType(a, allowNullish));
   if (mapped.some((a) => a === undefined)) return undefined;
-  const [a0, a1] = mapped as Abs[];
+  return builtinGenericAbsOf(m[1]!, mapped as Abs[]);
+}
+
+/**
+ * 泛型内建的域（文本 / 节点两层共用的唯一实现）：名字 + **已映射**的类型
+ * 实参。名字不认识 / 形参数不对 ⇒ undefined（调用方决定回落）。
+ */
+function builtinGenericAbsOf(name: string, mapped: readonly Abs[]): Abs | undefined {
+  const [a0, a1] = mapped;
   const any = absOf({ k: "any" });
   const str = absOf({ k: "prim", type: "string" });
   const num = absOf({ k: "prim", type: "number" });
@@ -654,6 +643,13 @@ const namedTypeNodeMemo = new Map<string, ReadonlyMap<string, TsTypeNode>>();
 const NAMED_TYPE_NODE_MEMO_MAX = 8;
 
 /**
+ * 声明节点 → 它所在的源码。导入节点表把**别的文件**的声明节点交给同一个
+ * 节点折叠器：节点内回落文本的臂（带实参的引用等）要用声明自己的源码切片，
+ * 用引用方的源码会切出垃圾文本 ⇒ 静默的错误域。
+ */
+const nodeOwnerSource = new WeakMap<object, string>();
+
+/**
  * 同文件具名类型声明 → **结构节点**（interface / type alias）。
  *
  * 与 `namedTypeTextsForSource` 同源同扫描，但保留节点：node→Abs 单点解析
@@ -677,6 +673,7 @@ export function namedTypeNodesForSource(source: string): ReadonlyMap<string, TsT
       const id = stmt.id as { name?: string } | undefined;
       if (!id?.name || stmt.typeParameters) continue;
       if (stmt.type === "TSInterfaceDeclaration" || stmt.type === "TSTypeAliasDeclaration") {
+        nodeOwnerSource.set(stmt, source);
         out.set(id.name, stmt as TsTypeNode);
       }
     }
@@ -941,56 +938,170 @@ export function valueTypeTextsForSource(source: string): ReadonlyMap<string, str
   return out;
 }
 
+/** 类型导入的 AST 引用（不读盘）：先收齐「要什么」，再由调用方决定怎么读。 */
+export type ImportedTypeRefs = {
+  /** `import type { A as B } from "spec"`：按出现顺序，每个说明符一项。 */
+  named: Array<{ spec: string; imported: string; local: string }>;
+  /** inline `import("spec").T`（T 取限定名最左的标识符）：按出现顺序。 */
+  inline: Array<{ spec: string; name: string }>;
+};
+
 /**
- * 跨文件类型声明：读 import 语句，把被导入模块的顶层 type/interface
- * 声明的**文本**映射到本地名。`load` 由调用方提供（service 用 fs；
- * core 测试可传内存表）。
+ * 源文件对**别的模块**的类型引用（同一次解析）：
+ * - 具名类型导入（`import type { X }` / `import { type X }`）；
+ * - inline import 类型（`TSImportType` 节点）。不扫源码文本——注释 / 字符串里
+ *   的同形文本不是引用。
  *
- * 只展开**具名 type 声明**（interface / type alias）；函数 / 类 / 值导入
- * 不进本表（它们走 `valueTypes` 或 Abs 观测）。命名空间导入不展开。
+ * 只收引用、不读盘：读盘与缓存由调用方（service）按文件签名决定。
  */
-export function importedTypeTextsForSource(
-  source: string,
-  load: (specifier: string) => string | undefined,
-): ReadonlyMap<string, string> {
-  const out = new Map<string, string>();
+export function importedTypeRefsForSource(source: string): ImportedTypeRefs {
+  const refs: ImportedTypeRefs = { named: [], inline: [] };
   try {
     const ast = parseSource(source, { keepTs: true }) as unknown as {
       program: { body: Array<Record<string, unknown>> };
     };
     for (const stmt of ast.program.body) {
       if (stmt.type !== "ImportDeclaration") continue;
-      const srcNode = stmt.source as { value?: unknown } | undefined;
-      if (typeof srcNode?.value !== "string") continue;
+      const spec = (stmt.source as { value?: unknown } | undefined)?.value;
       const specs = (stmt.specifiers as Array<Record<string, unknown>> | undefined) ?? [];
       // 只展开**类型导入**（`import type` 或 `import { type X }`）：
       // 运行时包（zod / express …）的 .d.ts 很大，逐个 import 全量解析会拖慢
       // 每个入口；无 type 修饰的运行时导入不可能是本解析层的类型来源。
       const typeImport =
         stmt.importKind === "type" || specs.some((sp) => sp.importKind === "type");
-      if (!typeImport) continue;
-      const loaded = load(srcNode.value);
-      if (loaded === undefined) continue;
-      const decls = namedTypeTextsForSource(loaded);
-      for (const spec of specs) {
-        if (spec.type !== "ImportSpecifier") continue;
-        const imported = spec.imported as { name?: string; value?: string } | undefined;
-        const local = spec.local as { name?: string } | undefined;
+      if (typeof spec !== "string" || !typeImport) continue;
+      for (const sp of specs) {
+        if (sp.type !== "ImportSpecifier") continue;
+        const imported = sp.imported as { name?: unknown; value?: unknown } | undefined;
+        const local = (sp.local as { name?: unknown } | undefined)?.name;
         const importedName =
           typeof imported?.name === "string"
             ? imported.name
             : typeof imported?.value === "string"
               ? imported.value
               : undefined;
-        if (!importedName || !local?.name) continue;
-        const text = decls.get(importedName);
-        if (text !== undefined) out.set(local.name, text);
+        if (importedName !== undefined && typeof local === "string") {
+          refs.named.push({ spec, imported: importedName, local });
+        }
       }
     }
+    walkAstNodes(
+      ast.program,
+      { skipLoc: true, skipComments: true, dedup: true },
+      (n) => {
+        if ((n as { type?: unknown }).type !== "TSImportType") return;
+        const node = n as unknown as TSImportType;
+        const name = tsNodeQualifiedName(node.qualifier);
+        if (name !== undefined) refs.inline.push({ spec: node.source.value, name });
+      },
+    );
   } catch {
-    // 解析失败 ⇒ 空表（回落 any，不猜）
+    // 解析失败 ⇒ 空引用（调用方回落文本 / any，不猜）
   }
-  return out;
+  return refs;
+}
+
+/** 跨文件类型声明的四张表（文本 / 节点 × 具名导入别名 / inline import）。 */
+export type ImportedTypeTables = {
+  /** 本地别名 → 被导入声明的文本。 */
+  namedTexts: ReadonlyMap<string, string>;
+  /** 本地别名 → 被导入模块里的声明节点。 */
+  namedNodes: ReadonlyMap<string, TsTypeNode>;
+  /** `spec#T` → 声明文本（inline `import("spec").T`）。 */
+  inlineTexts: ReadonlyMap<string, string>;
+  /** `spec#T` → 声明节点。 */
+  inlineNodes: ReadonlyMap<string, TsTypeNode>;
+};
+
+/**
+ * 跨文件类型声明：按 {@link importedTypeRefsForSource} 收到的引用读被导入
+ * 模块，把其顶层 type/interface 声明映射到本地名——**文本表与结构节点表
+ * 同批产出**（被导入模块只摊一次）。`load` 由调用方提供（service 用 fs；
+ * core 测试可传内存表）。
+ *
+ * 只展开**具名 type 声明**（interface / type alias）；函数 / 类 / 值导入
+ * 不进本表（它们走 `valueTypes` 或 Abs 观测）。命名空间导入不展开。
+ */
+export function importedTypesForSource(
+  source: string,
+  load: (specifier: string) => string | undefined,
+): ImportedTypeTables {
+  const refs = importedTypeRefsForSource(source);
+  const namedTexts = new Map<string, string>();
+  const namedNodes = new Map<string, TsTypeNode>();
+  const inlineTexts = new Map<string, string>();
+  const inlineNodes = new Map<string, TsTypeNode>();
+  type Decls = [ReadonlyMap<string, string>, ReadonlyMap<string, TsTypeNode>];
+  // 同一说明符只读一次、只摊一次（两张同文件表的 LRU 都只有 8 项）。
+  const declsBySpec = new Map<string, Decls | undefined>();
+  const declsOf = (spec: string): Decls | undefined => {
+    if (!declsBySpec.has(spec)) {
+      const loaded = load(spec);
+      declsBySpec.set(
+        spec,
+        loaded === undefined
+          ? undefined
+          : [namedTypeTextsForSource(loaded), namedTypeNodesForSource(loaded)],
+      );
+    }
+    return declsBySpec.get(spec);
+  };
+  for (const { spec, imported, local } of refs.named) {
+    const decls = declsOf(spec);
+    if (!decls) continue;
+    const text = decls[0].get(imported);
+    if (text !== undefined) namedTexts.set(local, text);
+    const node = decls[1].get(imported);
+    if (node !== undefined) namedNodes.set(local, node);
+  }
+  for (const { spec, name } of refs.inline) {
+    const key = `${spec}#${name}`;
+    if (inlineTexts.has(key) && inlineNodes.has(key)) continue;
+    const decls = declsOf(spec);
+    if (!decls) continue;
+    const text = decls[0].get(name);
+    if (text !== undefined) inlineTexts.set(key, text);
+    const node = decls[1].get(name);
+    if (node !== undefined) inlineNodes.set(key, node);
+  }
+  return { namedTexts, namedNodes, inlineTexts, inlineNodes };
+}
+
+/** 跨文件具名类型声明的**文本**表（{@link importedTypesForSource} 的文本面）。 */
+export function importedTypeTextsForSource(
+  source: string,
+  load: (specifier: string) => string | undefined,
+): ReadonlyMap<string, string> {
+  return importedTypesForSource(source, load).namedTexts;
+}
+
+/**
+ * 同文件注解环境工厂（core 内消费方的**唯一拼装点**）：具名文本表 + 结构
+ * 节点表 + 值类型表，一次调用三张表齐——`TSTypeReference` 臂的节点优先
+ * 与文本兜底靠的是同一份声明事实，不会出现「文本表能解析、节点表不能」。
+ *
+ * `base` 带调用方自己的上下文（类型参数 / 导入表 / 内建绑定）。三张同文件
+ * 表与 `base` 里的同键表顺序合并（同文件声明覆盖导入别名）；`base` 没有
+ * 对应表时直接复用工厂表对象（不额外分配）。
+ */
+export function sameFileAnnotationEnv(source: string, base: AnnotationEnv = {}): AnnotationEnv {
+  const local = {
+    namedTypes: namedTypeTextsForSource(source),
+    namedTypeNodes: namedTypeNodesForSource(source),
+    valueTypes: valueTypeTextsForSource(source),
+  };
+  const merged = <K, V>(baseTable: ReadonlyMap<K, V> | undefined, localTable: ReadonlyMap<K, V>): ReadonlyMap<K, V> =>
+    baseTable === undefined || localTable.size === 0
+      ? (baseTable ?? localTable)
+      : baseTable.size === 0
+        ? localTable
+        : new Map([...baseTable, ...localTable]);
+  return {
+    ...base,
+    namedTypes: merged(base.namedTypes, local.namedTypes),
+    namedTypeNodes: merged(base.namedTypeNodes, local.namedTypeNodes),
+    valueTypes: merged(base.valueTypes, local.valueTypes),
+  };
 }
 
 /** 具名类型引用 → 声明文本（链式别名最多展开 8 层；不可解析 ⇒ 原文本）。 */
@@ -1435,15 +1546,16 @@ function objectMembersOfTypeText(
 }
 
 
-/** `keyof T` → 键字面量联合（对象 / 元组 / 数组；其余不映射）。 */
-function keyofAbs(text: string, allowNullish: boolean, typeParams?: ReadonlyMap<string, Abs>): Abs | null | undefined {
-  const m = /^keyof\s+([\s\S]+)$/.exec(text.trim());
-  if (!m) return null;
-  const operand = mapTsType(m[1]!, allowNullish, typeParams);
-  if (!operand) return undefined;
+/**
+ * `keyof` 的域（文本 / 节点两层共用的唯一实现，输入是已映射的操作数）：
+ * 对象 ⇒ 键字面量联合（索引签名 ⇒ 再并 `string | number`；无键 ⇒ never）；
+ * 元组 / 数组 ⇒ `number | string`；其余不映射。
+ */
+function keyofAbsOf(operand: Abs): Abs | undefined {
   const s = operand.shape;
   if (s.k === "obj") {
-    const keys = Object.keys(s.slots);
+    // symbol 键槽不是 `keyof` 可达的字符串键（节点面独有的槽位形态）。
+    const keys = Object.keys(s.slots).filter((k) => s.slots[k]?.symbolKey !== true);
     if (s.index) {
       return joinAbsList([
         ...keys.map((k) => literalAbsOf(JSON.stringify(k))!),
@@ -1458,6 +1570,15 @@ function keyofAbs(text: string, allowNullish: boolean, typeParams?: ReadonlyMap<
     return joinAbsList([absOf({ k: "prim", type: "number" }), absOf({ k: "prim", type: "string" })]);
   }
   return undefined;
+}
+
+/** `keyof T` → 键字面量联合（对象 / 元组 / 数组；其余不映射）。 */
+function keyofAbs(text: string, allowNullish: boolean, typeParams?: ReadonlyMap<string, Abs>): Abs | null | undefined {
+  const m = /^keyof\s+([\s\S]+)$/.exec(text.trim());
+  if (!m) return null;
+  const operand = mapTsType(m[1]!, allowNullish, typeParams);
+  if (!operand) return undefined;
+  return keyofAbsOf(operand);
 }
 
 /** 索引访问 `{ a: number }["a"]` / `[string, number][0]` → 成员域。 */
@@ -1499,6 +1620,16 @@ function indexedAccessAbs(text: string, allowNullish: boolean, typeParams?: Read
       ? absOf({ k: "prim", type: "string" })
       : literalAbsOf(idxText);
   if (!idx) return undefined;
+  return indexedAccessAbsOf(base, idx);
+}
+
+/**
+ * 索引访问的域（文本 / 节点两层共用的唯一实现，输入是已映射的基类型与
+ * 索引类型）：对象按字符串字面量取槽（缺槽 ⇒ 索引签名的值域）、宽
+ * `string` / `number` ⇒ 索引签名或全部槽值的并；元组按数值字面量定位、宽
+ * `number` ⇒ 全体成员并；数组只接 `number`。
+ */
+function indexedAccessAbsOf(base: Abs, idx: Abs): Abs | undefined {
   const bs = base.shape;
   const is = idx.shape;
   if (bs.k === "obj") {
@@ -1531,6 +1662,32 @@ function indexedAccessAbs(text: string, allowNullish: boolean, typeParams?: Read
   if (bs.k === "arr") {
     return is.k === "prim" && is.type === "number" ? bs.element : undefined;
   }
+  return undefined;
+}
+
+/** 对象成员的顺序合并（后者覆盖同名槽）：接口继承、交叉类型两层共用。 */
+function mergedObjAbsOf(shapes: readonly Extract<Shape, { k: "obj" }>[]): Abs {
+  const slots: Extract<Shape, { k: "obj" }>["slots"] = {};
+  let index: Extract<Shape, { k: "obj" }>["index"];
+  for (const s of shapes) {
+    Object.assign(slots, s.slots);
+    if (s.index) index = s.index;
+  }
+  return absOf({ k: "obj", slots, ...(index ? { index } : {}), open: true });
+}
+
+/**
+ * 交叉类型的域（文本 / 节点两层共用的唯一实现）：全对象 ⇒ 合并槽位
+ * （`{a} & {b}` ⇒ `{a,b}`）；`any` 吸收另一侧（`any & {a}` ⇒ `{a}`）；
+ * 其余形态（条件 / 推断 / 非对象交叉）不映射。
+ */
+function intersectionAbsOf(members: readonly Abs[]): Abs | undefined {
+  const shapes = members.map((m) => m.shape);
+  if (shapes.every((s): s is Extract<Shape, { k: "obj" }> => s.k === "obj")) {
+    return mergedObjAbsOf(shapes);
+  }
+  if (shapes.length === 2 && shapes[0]!.k === "any") return members[1];
+  if (shapes.length === 2 && shapes[1]!.k === "any") return members[0];
   return undefined;
 }
 
@@ -1580,7 +1737,7 @@ function mapTsType(
   }
 
   // inline `import("spec").T`：名字不在本模块，文本由调用方的 import 表提供
-  // （service 的 `inlineImportTypeTextsForFile`；core 不依赖 fs）。
+  // （service 的 `annotationEnvForFile`；core 不依赖 fs）。
   const inlineImport = /^import\(\s*["']([^"']+)["']\s*\)\s*\.\s*([A-Za-z_$][\w$]*)$/.exec(t);
   if (inlineImport) {
     const text = env?.importTypes?.get(`${inlineImport[1]}#${inlineImport[2]}`);
@@ -1663,19 +1820,7 @@ function mapTsType(
   if (intersection.length > 1) {
     const members = intersection.map((part) => mapTsType(part, allowNullish, typeParams));
     if (members.some((m) => m === undefined)) return undefined;
-    const shapes = members.map((m) => m!.shape);
-    if (shapes.every((s) => s.k === "obj")) {
-      const slots: Extract<Shape, { k: "obj" }>["slots"] = {};
-      let index: Extract<Shape, { k: "obj" }>["index"];
-      for (const s of shapes as Array<Extract<Shape, { k: "obj" }>>) {
-        Object.assign(slots, s.slots);
-        if (s.index) index = s.index;
-      }
-      return absOf({ k: "obj", slots, ...(index ? { index } : {}), open: true });
-    }
-    if (shapes.length === 2 && shapes[0]!.k === "any") return members[1];
-    if (shapes.length === 2 && shapes[1]!.k === "any") return members[0];
-    return undefined;
+    return intersectionAbsOf(members as Abs[]);
   }
   if (t.includes("extends") || t.includes("infer")) {
     return undefined;
@@ -1856,94 +2001,118 @@ export function absTypeForTsTypeText(
   return withAnnotationEnv(env, () => mapTsType(text, true));
 }
 
-/** 结构面类型节点（Babel TSType 的纯数据视图；不依赖 @babel/types）。 */
+//#region 结构面：Babel TSType 节点 → Abs
+
+/**
+ * 类型节点的**存储形态**：环境表（`namedTypeNodes` / `importTypeNodes`）里的
+ * 节点按它存放。宽松是刻意的——合成节点（测试 / 其它解析器产物）没有
+ * start/end、字段可能不全；真正的字段契约由下面节点段的严格联合把守。
+ */
 type TsTypeNode = { type?: string; [key: string]: unknown };
 
-function tsAnnotatedNode(node: TsTypeNode | undefined): TsTypeNode | undefined {
-  if (!node) return undefined;
-  if (node.type === "TSTypeAnnotation") {
-    return (node as { typeAnnotation?: TsTypeNode }).typeAnnotation;
-  }
-  return node;
+/**
+ * 可投影成 Abs 的类型节点：Babel `TSType` 的**全部种类**，外加具名声明的两种
+ * 语句节点（`TSInterfaceDeclaration` / `TSTypeAliasDeclaration` 不在 `TSType`
+ * 联合里，由 `namedTypeNodes` 表与引用臂直接消费）。
+ *
+ * 节点段内部只用这个严格联合：Babel 字段名漂移（如引用的类型实参字段
+ * `typeParameters` → `typeArguments`）在编译期报错，而不是运行期静默读到
+ * undefined。
+ */
+type TsTypeAstNode = TSType | TSInterfaceDeclaration | TSTypeAliasDeclaration;
+
+/**
+ * 节点折叠的**唯一入口收窄**：入参 / 旁路 / 环境表里的节点是 `unknown`，
+ * `type` 为字符串的对象才进入节点段，其余（undefined / 原始值 / 无类型标签的
+ * 对象）直接 `undefined`。节点折叠自己不回落文本——文本兜底由调用方用
+ * `?? absTypeForTsTypeText(...)` 显式决定。
+ */
+function tsTypeNodeOf(node: unknown): TsTypeAstNode | undefined {
+  if (typeof node !== "object" || node === null) return undefined;
+  return typeof (node as { type?: unknown }).type === "string" ? (node as TsTypeAstNode) : undefined;
 }
 
-function tsNodeText(node: TsTypeNode | undefined, source: string | undefined): string | undefined {
-  if (!node || !source) return undefined;
-  return nodeTextOf(source, node as AstNode);
+/** 注解包装节点（`x: T` 的 `: T`）与类型节点同形处理：取内层类型节点。 */
+function tsTypeAnnotationOf(node: unknown): TsTypeAstNode | undefined {
+  if (typeof node !== "object" || node === null) return undefined;
+  return (node as { type?: unknown }).type === "TSTypeAnnotation"
+    ? tsTypeNodeOf((node as { typeAnnotation?: unknown }).typeAnnotation)
+    : tsTypeNodeOf(node);
+}
+
+/** 节点的源码切片（回落文本的臂用；合成节点没有区间 ⇒ undefined）。 */
+function tsNodeText(node: TsTypeAstNode, source: string | undefined): string | undefined {
+  const { start, end } = node as { start?: unknown; end?: unknown };
+  if (!source || typeof start !== "number" || typeof end !== "number") return undefined;
+  return source.slice(start, end);
 }
 
 /** 计算键 / 普通键 → 槽键；well-known symbol 走 `@@name`。 */
-function tsNodeKeyOf(node: TsTypeNode | undefined, computed: boolean): string | undefined {
-  if (!node) return undefined;
-  if (node.type === "Identifier" && typeof node.name === "string") return node.name;
-  if (node.type === "StringLiteral" && typeof node.value === "string") return node.value;
-  if (node.type === "NumericLiteral") return String(node.value);
-  if (computed && node.type === "MemberExpression") {
-    const obj = node.object as TsTypeNode | undefined;
-    const prop = node.property as TsTypeNode | undefined;
-    if (obj?.type === "Identifier" && obj.name === "Symbol" && prop?.type === "Identifier" && typeof prop.name === "string") {
+function tsNodeKeyOf(key: Expression | undefined, computed: boolean): string | undefined {
+  if (!key) return undefined;
+  if (key.type === "Identifier") return key.name;
+  if (key.type === "StringLiteral") return key.value;
+  if (key.type === "NumericLiteral") return String(key.value);
+  if (computed && key.type === "MemberExpression") {
+    const { object: obj, property: prop } = key;
+    if (obj.type === "Identifier" && obj.name === "Symbol" && prop.type === "Identifier") {
       return `@@${prop.name}`;
     }
   }
   return undefined;
 }
 
+/** 函数类型 / 调用签名的形参节点（Babel 口径：标识符 / 解构模式 / rest）。 */
+type TsFnParam = ArrayPattern | Identifier | ObjectPattern | RestElement;
+
 function tsNodeParamsOf(
-  params: TsTypeNode[] | undefined,
+  params: readonly TsFnParam[] | undefined,
   source: string | undefined,
   allowNullish: boolean,
 ): { names: string[]; types: Abs[]; optional: boolean[] } | undefined {
   const names: string[] = [];
   const types: Abs[] = [];
   const optional: boolean[] = [];
-  for (const raw of params ?? []) {
-    let p = raw;
-    if (p.type === "TSParameterProperty") p = p.parameter as TsTypeNode;
-    if (p.type === "Identifier" && p.name === "this") continue;
-    let name: string | undefined;
-    let ann: TsTypeNode | undefined;
-    let opt = false;
-    if (p.type === "Identifier" && typeof p.name === "string") {
+  for (const p of params ?? []) {
+    // 任一形参不可映射 ⇒ 整条函数类型不映射（与文本层同口径）。
+    let name: string;
+    let ann: TsTypeAstNode | undefined;
+    if (p.type === "Identifier") {
+      if (p.name === "this") continue;
       name = p.name;
-      ann = tsAnnotatedNode(p.typeAnnotation as TsTypeNode | undefined);
-      opt = p.optional === true;
-    } else if (p.type === "AssignmentPattern") {
-      const left = p.left as TsTypeNode | undefined;
-      if (left?.type === "Identifier" && typeof left.name === "string") {
-        name = left.name;
-        ann = tsAnnotatedNode((left.typeAnnotation ?? p.typeAnnotation) as TsTypeNode | undefined);
-        opt = true;
-      }
+      ann = tsTypeAnnotationOf(p.typeAnnotation);
     } else if (p.type === "RestElement") {
-      const arg = p.argument as TsTypeNode | undefined;
-      if (arg?.type === "Identifier" && typeof arg.name === "string") {
-        name = arg.name;
-        ann = tsAnnotatedNode((p.typeAnnotation ?? arg.typeAnnotation) as TsTypeNode | undefined);
-      }
+      // `...xs: T[]`：注解挂 rest 节点或其标识符（Babel 版本差异），两处都看。
+      const arg = p.argument;
+      if (arg.type !== "Identifier") return undefined;
+      name = arg.name;
+      ann = tsTypeAnnotationOf(p.typeAnnotation) ?? tsTypeAnnotationOf(arg.typeAnnotation);
+    } else {
+      // 解构形参没有可发布的参数名 ⇒ 不映射。
+      return undefined;
     }
-    if (name === undefined) return undefined;
     const type = ann ? mapTsTypeNode(ann, source, allowNullish) : absOf({ k: "any" });
     if (!type) return undefined;
     names.push(name);
     types.push(type);
-    optional.push(opt);
+    optional.push(p.type === "Identifier" && p.optional === true);
   }
   return { names, types, optional };
 }
 
 function tsNodeReturnOf(
-  node: TsTypeNode | undefined,
+  returnType: TSTypeAnnotation | null | undefined,
   source: string | undefined,
   allowNullish: boolean,
 ): Abs | undefined {
-  const ann = tsAnnotatedNode(node);
+  const ann = tsTypeAnnotationOf(returnType);
   if (!ann) return absOf({ k: "any" });
   return mapTsTypeNode(ann, source, allowNullish);
 }
 
 function tsNodeFn(
-  params: TsTypeNode[] | undefined,
-  returnType: TsTypeNode | undefined,
+  params: readonly TsFnParam[] | undefined,
+  returnType: TSTypeAnnotation | null | undefined,
   source: string | undefined,
   allowNullish: boolean,
   ctor: boolean,
@@ -1965,18 +2134,14 @@ function tsNodeFn(
 }
 
 function tsNodeMemberOf(
-  member: TsTypeNode,
+  member: TSTypeElement,
   source: string | undefined,
   allowNullish: boolean,
 ): ObjectMember | undefined {
-  const kind = member.kind;
-  const computed = member.computed === true;
-  const key = tsNodeKeyOf(member.key as TsTypeNode | undefined, computed);
   if (member.type === "TSIndexSignature") {
-    const keyAnn = tsAnnotatedNode(
-      ((member.parameters as TsTypeNode[] | undefined)?.[0]?.typeAnnotation) as TsTypeNode | undefined,
-    );
-    const valAnn = tsAnnotatedNode(member.typeAnnotation as TsTypeNode | undefined);
+    const param = member.parameters[0];
+    const keyAnn = param ? tsTypeAnnotationOf(param.typeAnnotation) : undefined;
+    const valAnn = tsTypeAnnotationOf(member.typeAnnotation);
     if (!keyAnn || !valAnn) return undefined;
     const keyAbs = mapTsTypeNode(keyAnn, source, allowNullish);
     const value = mapTsTypeNode(valAnn, source, allowNullish);
@@ -1984,47 +2149,29 @@ function tsNodeMemberOf(
   }
   if (member.type === "TSCallSignatureDeclaration" || member.type === "TSConstructSignatureDeclaration") {
     const ctor = member.type === "TSConstructSignatureDeclaration";
-    const fn = tsNodeFn(
-      member.params as TsTypeNode[] | undefined,
-      member.returnType as TsTypeNode | undefined,
-      source,
-      allowNullish,
-      ctor,
-    );
+    const fn = tsNodeFn(member.params, member.returnType, source, allowNullish, ctor);
     return fn ? { kind: ctor ? "construct" : "call", value: fn } : undefined;
   }
-  if (member.type === "TSGetterSignature" || member.type === "TSSetterSignature") {
-    if (!key) return undefined;
-    const isGet = member.type === "TSGetterSignature";
-    if (isGet) {
-      const ret = tsNodeReturnOf(member.returnType as TsTypeNode | undefined, source, allowNullish);
-      return ret ? { kind: "get", key, value: ret } : undefined;
-    }
-    const ps = tsNodeParamsOf(member.params as TsTypeNode[] | undefined, source, allowNullish);
-    return ps && ps.types.length > 0 ? { kind: "set", key, value: ps.types[0]! } : undefined;
-  }
   if (member.type === "TSMethodSignature") {
+    const key = tsNodeKeyOf(member.key, member.computed);
     if (!key) return undefined;
-    if (kind === "get") {
-      const ret = tsNodeReturnOf(member.returnType as TsTypeNode | undefined, source, allowNullish);
+    // 访问器是 `TSMethodSignature` 的 `kind`（get / set）——Babel 没有独立的
+    // getter / setter 签名种类。
+    if (member.kind === "get") {
+      const ret = tsNodeReturnOf(member.returnType, source, allowNullish);
       return ret ? { kind: "get", key, value: ret } : undefined;
     }
-    if (kind === "set") {
-      const ps = tsNodeParamsOf(member.params as TsTypeNode[] | undefined, source, allowNullish);
+    if (member.kind === "set") {
+      const ps = tsNodeParamsOf(member.params, source, allowNullish);
       return ps && ps.types.length > 0 ? { kind: "set", key, value: ps.types[0]! } : undefined;
     }
-    const fn = tsNodeFn(
-      member.params as TsTypeNode[] | undefined,
-      member.returnType as TsTypeNode | undefined,
-      source,
-      allowNullish,
-      false,
-    );
-    return fn ? { kind: "method", key, value: fn, ...(member.optional === true ? { optional: true } : {}) } : undefined;
+    const fn = tsNodeFn(member.params, member.returnType, source, allowNullish, false);
+    return fn ? { kind: "method", key, value: fn, ...(member.optional ? { optional: true } : {}) } : undefined;
   }
   if (member.type === "TSPropertySignature") {
+    const key = tsNodeKeyOf(member.key, member.computed);
     if (!key) return undefined;
-    const ann = tsAnnotatedNode(member.typeAnnotation as TsTypeNode | undefined);
+    const ann = tsTypeAnnotationOf(member.typeAnnotation);
     if (!ann) return undefined;
     const value = mapTsTypeNode(ann, source, allowNullish);
     if (!value) return undefined;
@@ -2032,49 +2179,29 @@ function tsNodeMemberOf(
       kind: "property",
       key,
       value,
-      ...(member.optional === true ? { optional: true } : {}),
-      ...(member.readonly === true ? { readonly: true } : {}),
+      ...(member.optional ? { optional: true } : {}),
+      ...(member.readonly ? { readonly: true } : {}),
     };
   }
-  return undefined;
+  const unhandled: never = member;
+  return unhandled;
 }
 
 function tsNodeObjectAbs(
-  members: TsTypeNode[] | undefined,
+  members: readonly TSTypeElement[],
   source: string | undefined,
   allowNullish: boolean,
-): Abs | undefined {
+): Abs {
   const parsed: ObjectMember[] = [];
-  for (const m of members ?? []) {
+  for (const m of members) {
     const member = tsNodeMemberOf(m, source, allowNullish);
     if (member) parsed.push(member);
   }
   return objectAbsOfMembers(parsed);
 }
 
-function tsNodeInterfaceAbs(
-  node: TsTypeNode,
-  source: string | undefined,
-  allowNullish: boolean,
-): Abs | undefined {
-  const body = node.body as TsTypeNode | undefined;
-  const own = tsNodeObjectAbs(body?.body as TsTypeNode[] | undefined, source, allowNullish);
-  if (!own) return undefined;
-  const bases: Abs[] = [];
-  for (const h of (node.extends as TsTypeNode[] | undefined) ?? []) {
-    const expr = h.expression as TsTypeNode | undefined;
-    const name = expr?.type === "Identifier" && typeof expr.name === "string" ? expr.name : undefined;
-    if (!name || h.typeParameters !== undefined) continue;
-    const baseNode = activeAnnotationEnv?.namedTypeNodes?.get(name);
-    const text = activeAnnotationEnv?.namedTypes?.get(name);
-    const base = baseNode
-      ? mapTsTypeNode(baseNode, source, allowNullish)
-      : text !== undefined
-        ? mapTsType(text, allowNullish)
-        : undefined;
-    if (base) bases.push(base);
-  }
-  if (bases.length === 0) return own;
+/** 基接口成员在前、自有成员在后（同名槽自有覆盖）；非对象基跳过。 */
+function mergeBasesUnderOwn(own: Abs, bases: readonly Abs[]): Abs {
   const ownShape = own.shape;
   if (ownShape.k === "fn") return own;
   if (ownShape.k !== "obj") return own;
@@ -2091,16 +2218,47 @@ function tsNodeInterfaceAbs(
   return absOf({ k: "obj", slots, ...(index ? { index } : {}), open: true });
 }
 
-/** 迭代协议泛型的**节点面**映射（文本面仍由 builtinGenericAbs 负责，避免
- *  dts 值通道因 Abs 形状变化而丢掉注解实参）。 */
-function tsNodeIteratorGeneric(
-  name: string,
-  typeParams: TsTypeNode | undefined,
+function tsNodeInterfaceAbs(
+  node: TSInterfaceDeclaration,
   source: string | undefined,
   allowNullish: boolean,
 ): Abs | undefined {
-  const params = typeParams?.params as TsTypeNode[] | undefined;
-  const el = params?.[0] ? mapTsTypeNode(params[0], source, allowNullish) : absOf({ k: "any" });
+  // 带类型实参的基接口（`extends Rec<string>`）不做类型参数替换（文本层同口径）。
+  const bases: Abs[] = [];
+  for (const h of node.extends ?? []) {
+    const name =
+      h.expression.type === "Identifier"
+        ? h.expression.name
+        : tsNodeQualifiedName(h.expression as TSEntityName);
+    if (!name) continue;
+    const env = activeAnnotationEnv;
+    const base = mapNamedTypeOf(
+      name,
+      env?.namedTypeNodes?.get(name),
+      env?.namedTypes?.get(name),
+      source,
+      allowNullish,
+    );
+    if (base) bases.push(base);
+  }
+  return mergeBasesUnderOwn(tsNodeObjectAbs(node.body.body, source, allowNullish), bases);
+}
+
+/**
+ * 迭代协议泛型（`Iterable<T>` / `Iterator<T>` / `AsyncIterable<T>` …）的映射。
+ *
+ * **只有节点面有这份精度**：文本层的 `builtinGenericAbs` 不认识这些名字
+ * （`Iterable<string>` 文本面落空），所以它是节点面的增量能力，不是第二份
+ * 实现——文本面要保持既有行为（含 dts 值通道的 Abs 形状），不在此扩表。
+ */
+function tsNodeIteratorGeneric(
+  name: string,
+  typeArgs: TSTypeParameterInstantiation | null | undefined,
+  source: string | undefined,
+  allowNullish: boolean,
+): Abs | undefined {
+  const first = typeArgs?.params[0];
+  const el = first ? mapTsTypeNode(first, source, allowNullish) : absOf({ k: "any" });
   if (!el) return undefined;
   const iteratorMethod = (): Abs =>
     absFunction(
@@ -2128,56 +2286,73 @@ function tsNodeIteratorGeneric(
         slots: { "@@asyncIterator": { value: iteratorMethod(), symbolKey: true } },
       });
     default:
+      // 不是迭代协议泛型（名字按运行期输入分派；调用方继续试其它内建）。
       return undefined;
   }
 }
 
-/** 字面量类型节点 → 带 lit term 的 Abs。 */
-function tsNodeLiteralAbs(lit: TsTypeNode | undefined): Abs | undefined {
-  if (!lit) return undefined;
-  const mk = (type: "string" | "number" | "boolean" | "bigint", value: string | number | boolean | bigint): Abs =>
-    abs({ k: "prim", type }, { op: "lit", value }, undefined, "exact");
-  if (lit.type === "StringLiteral" && typeof lit.value === "string") return mk("string", lit.value);
-  if (lit.type === "NumericLiteral" && typeof lit.value === "number") return mk("number", lit.value);
-  if (lit.type === "BooleanLiteral" && typeof lit.value === "boolean") return mk("boolean", lit.value);
-  if (lit.type === "BigIntLiteral" && typeof lit.value === "string") {
-    try {
-      return mk("bigint", BigInt(lit.value));
-    } catch {
-      return undefined;
+type TsLiteralValue = string | number | boolean | bigint;
+
+/** 字面量类型节点的值（负数的一元前缀已折叠；不是纯字面量 ⇒ undefined）。 */
+function tsNodeLiteralValue(lit: TSLiteralType["literal"]): TsLiteralValue | undefined {
+  const bigintOf = (raw: bigint | string): bigint => (typeof raw === "bigint" ? raw : BigInt(raw));
+  switch (lit.type) {
+    case "StringLiteral":
+      return lit.value;
+    case "NumericLiteral":
+      return lit.value;
+    case "BooleanLiteral":
+      return lit.value;
+    case "BigIntLiteral":
+      return bigintOf(lit.value);
+    case "UnaryExpression": {
+      const arg = lit.argument;
+      if (lit.operator !== "-") return undefined;
+      if (arg.type === "NumericLiteral") return -arg.value;
+      return arg.type === "BigIntLiteral" ? -bigintOf(arg.value) : undefined;
+    }
+    case "TemplateLiteral": {
+      // 无表达式的模板字面量类型（`` `ab` ``）：唯一的 quasi 就是值。
+      const [quasi] = lit.quasis;
+      const cooked = quasi?.value.cooked;
+      return lit.expressions.length === 0 && typeof cooked === "string" ? cooked : undefined;
+    }
+    default: {
+      const unhandled: never = lit;
+      return unhandled;
     }
   }
-  if (lit.type === "UnaryExpression" && lit.operator === "-") {
-    const arg = lit.argument as TsTypeNode | undefined;
-    if (arg?.type === "NumericLiteral" && typeof arg.value === "number") return mk("number", -arg.value);
-    if (arg?.type === "BigIntLiteral" && typeof arg.value === "string") {
-      try {
-        return mk("bigint", -BigInt(arg.value));
-      } catch {
-        return undefined;
-      }
-    }
-  }
-  if (lit.type === "TemplateLiteral") {
-    const exprs = (lit.expressions as TsTypeNode[] | undefined) ?? [];
-    const quasis = (lit.quasis as TsTypeNode[] | undefined) ?? [];
-    if (exprs.length === 0 && quasis.length === 1) {
-      const cooked = quasis[0]?.value as TsTypeNode | undefined;
-      if (typeof cooked?.cooked === "string") return mk("string", cooked.cooked);
-    }
-  }
-  return undefined;
 }
 
-function tsNodeQualifiedName(node: TsTypeNode | undefined): string | undefined {
+/** 字面量类型节点 → 带 lit term 的 Abs（exact）。 */
+function tsNodeLiteralAbs(lit: TSLiteralType["literal"]): Abs | undefined {
+  let value: TsLiteralValue | undefined;
+  try {
+    value = tsNodeLiteralValue(lit);
+  } catch {
+    // bigint 字面量的值不可解析 ⇒ 不映射（不猜）。
+    return undefined;
+  }
+  if (value === undefined) return undefined;
+  const type =
+    typeof value === "string"
+      ? "string"
+      : typeof value === "number"
+        ? "number"
+        : typeof value === "boolean"
+          ? "boolean"
+          : "bigint";
+  return abs({ k: "prim", type }, { op: "lit", value }, undefined, "exact");
+}
+
+/** 实体名 → 点分文本（`A.B.C`）；不是名字节点 ⇒ undefined。 */
+function tsNodeQualifiedName(node: TSEntityName | null | undefined): string | undefined {
   if (!node) return undefined;
-  if (node.type === "Identifier" && typeof node.name === "string") return node.name;
-  if (node.type === "TSQualifiedName") {
-    const left = tsNodeQualifiedName(node.left as TsTypeNode | undefined);
-    const right = tsNodeQualifiedName(node.right as TsTypeNode | undefined);
-    return left && right ? `${left}.${right}` : undefined;
-  }
-  return undefined;
+  if (node.type === "Identifier") return node.name;
+  if (node.type !== "TSQualifiedName") return undefined;
+  const left = tsNodeQualifiedName(node.left);
+  const right = tsNodeQualifiedName(node.right);
+  return left && right ? `${left}.${right}` : undefined;
 }
 
 /** 对象 Abs 的字符串键集合（keyof / mapped type 用；有索引签名 ⇒ 不可枚举）。 */
@@ -2204,184 +2379,249 @@ function tsNodeStringKeys(a: Abs | undefined): string[] | undefined {
   return out;
 }
 
-function tsNodeKeyofAbs(a: Abs): Abs | undefined {
-  const s = a.shape;
-  if (s.k === "obj") {
-    const members: Abs[] = Object.keys(s.slots)
-      .filter((k) => s.slots[k]?.symbolKey !== true)
-      .map((k) => abs({ k: "prim", type: "string" }, { op: "lit", value: k }, undefined, "exact"));
-    if (s.index) {
-      members.push(absOf({ k: "prim", type: "string" }), absOf({ k: "prim", type: "number" }));
-    }
-    return members.length > 0 ? joinAbsList(members) : undefined;
-  }
-  if (s.k === "tuple") {
-    const members = s.elements.map((_, i) =>
-      abs({ k: "prim", type: "number" }, { op: "lit", value: i }, undefined, "exact"),
-    );
-    members.push(absOf({ k: "prim", type: "string" }), absOf({ k: "prim", type: "number" }));
-    return joinAbsList(members);
-  }
-  return undefined;
-}
-
-/** 元组节点（含标签 / 可选 / rest）→ Abs：可选位逐臂展开，rest 保留位置前缀。 */
+/**
+ * 元组节点（含标签 / 可选 / rest）→ Abs。
+ *
+ * - **rest 位**：`...T[]` 的元素域进 `rest`（位置前缀保住：`[number, ...string[]]`
+ *   的 `t[0]` 恒 number）；`...[A, B]` 是定长展开，成员直接落到位置上（节点面
+ *   独有的位置精度；文本层把它摊进 rest）；首个 rest 之后的成员一律并入 rest
+ *   元素域（与文本层同口径）。
+ * - **可选位**：每个合法长度一个元组臂（`[number, string?]` = `[number] |
+ *   [number, string]`）；超过 6 个可选位退回 arr 元素并集（爆炸上限）。
+ */
 function tsNodeTupleAbs(
-  raw: TsTypeNode[],
+  raw: readonly (TSType | TSNamedTupleMember)[],
   source: string | undefined,
   allowNullish: boolean,
 ): Abs | undefined {
   const prefix: Abs[] = [];
   const optionals: Abs[] = [];
-  let rest: Abs | undefined;
+  const tails: Abs[] = [];
+  const variadics: Abs[] = [];
   let sawRest = false;
   for (const part of raw) {
-    let p = part;
+    let p: TsTypeAstNode = part;
     let optional = false;
     let isRest = false;
     if (p.type === "TSNamedTupleMember") {
-      optional = p.optional === true;
-      p = p.elementType as TsTypeNode;
+      optional = p.optional;
+      p = p.elementType;
     }
     if (p.type === "TSRestType") {
       isRest = true;
-      p = p.typeAnnotation as TsTypeNode;
+      p = p.typeAnnotation;
     }
     if (p.type === "TSOptionalType") {
       optional = true;
-      p = p.typeAnnotation as TsTypeNode;
+      p = p.typeAnnotation;
     }
     const mapped = mapTsTypeNode(p, source, allowNullish);
     if (!mapped) return undefined;
-    if (isRest) {
+    if (isRest || sawRest) {
       sawRest = true;
-      if (mapped.shape.k === "arr") rest = mapped.shape.element;
-      else if (mapped.shape.k === "tuple") {
-        prefix.push(...mapped.shape.elements);
-        if (mapped.shape.rest) rest = mapped.shape.rest;
-      } else rest = mapped;
-      continue;
-    }
-    if (optional) optionals.push(mapped);
+      const s = mapped.shape;
+      if (s.k === "arr") variadics.push(s.element);
+      else if (s.k === "tuple") {
+        tails.push(...s.elements);
+        if (s.rest) variadics.push(s.rest);
+      } else variadics.push(mapped);
+    } else if (optional) optionals.push(mapped);
+    else if (optionals.length > 0) optionals.push(mapped);
     else prefix.push(mapped);
   }
-  const withRest = (elements: Abs[]): Abs =>
-    rest
-      ? abs({ k: "tuple", elements, rest }, undefined, undefined, "exact")
-      : abs({ k: "tuple", elements }, undefined, undefined, "exact");
+  const variadic = variadics.length > 0 ? joinAbsList(variadics) : undefined;
+  const tupleOf = (elements: Abs[], rest?: Abs): Abs =>
+    abs({ k: "tuple", elements, ...(rest ? { rest } : {}) }, undefined, undefined, "exact");
+  const withTail = (elements: Abs[]): Abs => {
+    if (tails.length === 0) return tupleOf(elements, variadic);
+    // 尾部只有定长展开 ⇒ 成员直接落到位置上（节点面独有的位置精度）。
+    if (!variadic) return tupleOf([...elements, ...tails]);
+    return tupleOf(elements, joinAbsList([...tails, variadic]));
+  };
   if (optionals.length === 0) {
-    if (!sawRest) return withRest(prefix);
-    if (prefix.length === 0 && rest) return abs({ k: "arr", element: rest }, undefined, undefined, "exact");
-    return withRest(prefix);
+    // 前缀为空且只有变长元素域 ⇒ 与 arr 同域，折 arr（`[...string[]]`）。
+    if (prefix.length === 0 && tails.length === 0 && variadic) {
+      return abs({ k: "arr", element: variadic }, undefined, undefined, "exact");
+    }
+    return withTail(prefix);
   }
   if (optionals.length > 6) {
-    const all = [...prefix, ...optionals];
-    return abs({ k: "arr", element: joinAbsList(all) }, undefined, undefined, "exact");
+    const element = joinAbsList([...prefix, ...optionals, ...tails, ...(variadic ? [variadic] : [])]);
+    return abs({ k: "arr", element }, undefined, undefined, "exact");
   }
   const arms: Abs[] = [];
   for (let n = 0; n <= optionals.length; n++) {
-    arms.push(withRest([...prefix, ...optionals.slice(0, n)]));
+    arms.push(withTail([...prefix, ...optionals.slice(0, n)]));
   }
-  return arms.length === 1 ? arms[0]! : abs({ k: "sum", members: arms }, undefined, undefined, "exact");
+  return abs({ k: "sum", members: arms }, undefined, undefined, "exact");
 }
 
 /**
- * 结构面：`TSType` 节点 → Abs。**未支持的种类**回落到源码文本映射（迁移期
- * fallback，不是第二套语义）；成员容器与函数类型优先走节点，避免把
- * `get` / `(x): T` / `new (x): T` / `[Symbol.iterator]` 重新交给文本二分。
+ * 以更深一层的解析环境运行 `f`（递归展开声明的终止计数；退出即恢复）。
+ * 环境为空时只带深度——文本层各处 `{ ...env, depth: n + 1 }` 的同义写法。
  */
-function mapTsTypeNode(
-  node: TsTypeNode | undefined,
+function withDeeperAnnotationEnv(f: () => Abs | undefined): Abs | undefined {
+  const prev = activeAnnotationEnv;
+  activeAnnotationEnv = { ...prev, depth: (prev?.depth ?? 0) + 1 };
+  try {
+    return f();
+  } finally {
+    activeAnnotationEnv = prev;
+  }
+}
+
+/** 引用方环境 × 声明所在文件 → 已并好该文件同文件表的环境（不含深度）。 */
+const crossFileEnvs = new WeakMap<AnnotationEnv, Map<string, AnnotationEnv>>();
+
+/**
+ * 具名声明引用 → Abs（`TSTypeReference` / 接口基类型 / inline import 类型共用）：
+ * **声明节点优先、声明文本兜底**，两者来自环境里同一份声明事实。
+ *
+ * 声明节点在**它自己的文件**里解析名字：导入的声明切到被导入文件的同文件
+ * 表（本地别名表对它没有意义），名字解析与「在该文件里看这个声明」一致。
+ * 深度上限与文本层同值（8 层）——递归别名 / 接口靠它终止。
+ */
+function mapNamedTypeOf(
+  name: string,
+  nodeDecl: TsTypeNode | undefined,
+  text: string | undefined,
   source: string | undefined,
   allowNullish: boolean,
 ): Abs | undefined {
-  const n = tsAnnotatedNode(node);
-  if (!n) return undefined;
-  switch (n.type) {
+  const prev = activeAnnotationEnv;
+  if ((prev?.depth ?? 0) >= 8) return undefined;
+  const decl = nodeDecl === undefined ? undefined : tsTypeNodeOf(nodeDecl);
+  if (decl) {
+    const owner = nodeOwnerSource.get(decl);
+    if (owner === undefined || owner === source) {
+      activeAnnotationEnv = { ...prev, depth: (prev?.depth ?? 0) + 1 };
+    } else {
+      let byOwner = crossFileEnvs.get(prev as AnnotationEnv);
+      if (!byOwner) {
+        byOwner = new Map();
+        crossFileEnvs.set(prev as AnnotationEnv, byOwner);
+      }
+      let base = byOwner.get(owner);
+      if (!base) {
+        base = sameFileAnnotationEnv(owner, prev ?? {});
+        byOwner.set(owner, base);
+      }
+      activeAnnotationEnv = { ...base, depth: (prev?.depth ?? 0) + 1 };
+    }
+    try {
+      return mapTsTypeNode(decl, owner ?? source, allowNullish);
+    } finally {
+      activeAnnotationEnv = prev;
+    }
+  }
+  if (text === undefined || text.trim() === name) return undefined;
+  return withDeeperAnnotationEnv(() => mapTsType(text, allowNullish));
+}
+
+/** inline import 类型 `import("spec").T`：声明来自调用方的 import 表。 */
+function mapImportTypeOf(
+  node: TSImportType,
+  source: string | undefined,
+  allowNullish: boolean,
+): Abs | undefined {
+  const name = tsNodeQualifiedName(node.qualifier);
+  if (!name) return undefined;
+  const env = activeAnnotationEnv;
+  const key = `${node.source.value}#${name}`;
+  return mapNamedTypeOf(
+    name,
+    env?.importTypeNodes?.get(key),
+    env?.importTypes?.get(key),
+    source,
+    allowNullish,
+  );
+}
+
+/**
+ * 结构面：类型节点 → Abs（`TSType` 全种类 + 具名声明的**穷尽**分派）。
+ *
+ * - **明确不支持**的臂（条件 / infer / intrinsic / heritage）返回 undefined，
+ *   不回落文本：它们不是可投影的类型面。
+ * - **设计内的文本回落**只有三处——节点面不认识的带实参引用、`typeof` 值
+ *   引用、inline import 类型：声明事实本来就在环境表（声明 / 值类型 / import
+ *   表）里，由 `mapNamedTypeOf` 统一「节点优先、文本兜底」。
+ */
+function mapTsTypeNode(
+  node: TsTypeAstNode,
+  source: string | undefined,
+  allowNullish: boolean,
+): Abs | undefined {
+  switch (node.type) {
     case "TSTypeLiteral":
-      return tsNodeObjectAbs((n.members as TsTypeNode[] | undefined) ?? [], source, allowNullish);
+      return tsNodeObjectAbs(node.members, source, allowNullish);
     case "TSInterfaceDeclaration":
-      return tsNodeInterfaceAbs(n, source, allowNullish);
+      return tsNodeInterfaceAbs(node, source, allowNullish);
     case "TSTypeAliasDeclaration":
-      return mapTsTypeNode(n.typeAnnotation as TsTypeNode | undefined, source, allowNullish);
+      return mapTsTypeNode(node.typeAnnotation, source, allowNullish);
     case "TSTypeReference": {
-      const tn = n.typeName as TsTypeNode | undefined;
-      const name =
-        tn?.type === "Identifier" && typeof tn.name === "string" ? tn.name : undefined;
+      const name = tsNodeQualifiedName(node.typeName);
       if (!name) return undefined;
       const env = activeAnnotationEnv;
-      const bound = env?.typeParams?.get(name) ?? env?.builtins?.get(name) ?? builtinTypeAbs(name);
-      if (bound) return bound;
-      const iteratorGeneric = tsNodeIteratorGeneric(
-        name,
-        n.typeParameters as TsTypeNode | undefined,
-        source,
-        allowNullish,
-      );
-      if (iteratorGeneric) return iteratorGeneric;
-      const nodeDecl = env?.namedTypeNodes?.get(name);
-      if (nodeDecl && (env?.depth ?? 0) < 8) {
-        const prev = activeAnnotationEnv;
-        activeAnnotationEnv = { ...env, depth: (env?.depth ?? 0) + 1 };
-        try {
-          return mapTsTypeNode(nodeDecl, source, allowNullish);
-        } finally {
-          activeAnnotationEnv = prev;
-        }
+      const args = node.typeArguments?.params ?? [];
+      // 顺序与文本层一致：类型参数 / 内建绑定 → 内建类型 → 声明（节点优先）。
+      if (args.length === 0) {
+        const bound = env?.typeParams?.get(name) ?? env?.builtins?.get(name) ?? builtinTypeAbs(name);
+        if (bound) return bound;
+        const named = mapNamedTypeOf(
+          name,
+          env?.namedTypeNodes?.get(name),
+          env?.namedTypes?.get(name),
+          source,
+          allowNullish,
+        );
+        if (named) return named;
+        // 迭代协议泛型裸名（`Iterable` / `Iterator` …）是节点面的增量精度。
+        return tsNodeIteratorGeneric(name, node.typeArguments, source, allowNullish);
       }
-      const text = tsNodeText(n, source);
+      // 带类型实参的引用：实参先按节点映射，再交给与文本层同一个内建泛型核心
+      // （按裸名查 `builtinTypeAbs` 会丢掉全部实参）。
+      const mapped = args.map((a) => mapTsTypeNode(a, source, allowNullish));
+      if (mapped.every((m) => m !== undefined)) {
+        const [first] = mapped as Abs[];
+        const generic =
+          builtinGenericAbsOf(name, mapped as Abs[]) ??
+          ((name === "Array" || name === "ReadonlyArray") && args.length === 1
+            ? abs({ k: "arr", element: first! }, undefined, undefined, "exact")
+            : undefined) ??
+          tsNodeIteratorGeneric(name, node.typeArguments, source, allowNullish);
+        if (generic) return generic;
+      }
+      // 节点面不认识的带实参引用（utility type / 泛型别名 …）回落完整节点文本。
+      const text = tsNodeText(node, source);
       return text ? mapTsType(text, allowNullish) : undefined;
     }
     case "TSUnionType": {
-      const members = (n.types as TsTypeNode[] | undefined) ?? [];
-      const mapped = members.map((m) => mapTsTypeNode(m, source, allowNullish));
-      if (mapped.some((m) => m === undefined)) return undefined;
-      return abs({ k: "sum", members: mapped as Abs[] }, undefined, undefined, "exact");
+      const members = node.types.map((m) => mapTsTypeNode(m, source, allowNullish));
+      if (members.some((m) => m === undefined)) return undefined;
+      return abs({ k: "sum", members: members as Abs[] }, undefined, undefined, "exact");
     }
     case "TSIntersectionType": {
-      const members = (n.types as TsTypeNode[] | undefined) ?? [];
-      const mapped = members.map((m) => mapTsTypeNode(m, source, allowNullish));
-      if (mapped.some((m) => m === undefined)) return undefined;
-      const shapes = mapped.map((m) => m!.shape);
-      if (shapes.every((s) => s.k === "obj")) {
-        const slots: Extract<Shape, { k: "obj" }>["slots"] = {};
-        let index: Extract<Shape, { k: "obj" }>["index"];
-        for (const s of shapes as Array<Extract<Shape, { k: "obj" }>>) {
-          Object.assign(slots, s.slots);
-          if (s.index) index = s.index;
-        }
-        return absOf({ k: "obj", slots, ...(index ? { index } : {}), open: true });
-      }
-      return undefined;
+      const members = node.types.map((m) => mapTsTypeNode(m, source, allowNullish));
+      if (members.some((m) => m === undefined)) return undefined;
+      return intersectionAbsOf(members as Abs[]);
     }
     case "TSArrayType": {
-      const el = mapTsTypeNode(n.elementType as TsTypeNode | undefined, source, allowNullish);
+      const el = mapTsTypeNode(node.elementType, source, allowNullish);
       return el ? abs({ k: "arr", element: el }, undefined, undefined, "exact") : undefined;
     }
-    case "TSTupleType": {
-      const raw = (n.elementTypes as TsTypeNode[] | undefined) ?? (n.types as TsTypeNode[] | undefined) ?? [];
-      return tsNodeTupleAbs(raw, source, allowNullish);
-    }
+    case "TSTupleType":
+      return tsNodeTupleAbs(node.elementTypes, source, allowNullish);
     case "TSFunctionType":
-      return tsNodeFn(
-        n.params as TsTypeNode[] | undefined,
-        n.returnType as TsTypeNode | undefined,
-        source,
-        allowNullish,
-        false,
-      );
+      return tsNodeFn(node.params, node.returnType, source, allowNullish, false);
     case "TSConstructorType":
-      return tsNodeFn(
-        n.params as TsTypeNode[] | undefined,
-        n.returnType as TsTypeNode | undefined,
-        source,
-        allowNullish,
-        true,
-      );
+      return tsNodeFn(node.params, node.returnType, source, allowNullish, true);
     case "TSParenthesizedType":
     case "TSOptionalType":
     case "TSRestType":
-      return mapTsTypeNode(n.typeAnnotation as TsTypeNode | undefined, source, allowNullish);
+      return mapTsTypeNode(node.typeAnnotation, source, allowNullish);
+    // 带标签的元组成员只出现在元组里（标签不进域）；单独到达时取其元素类型。
+    case "TSNamedTupleMember":
+      return mapTsTypeNode(node.elementType, source, allowNullish);
     case "TSStringKeyword":
       return absOf({ k: "prim", type: "string" });
     case "TSNumberKeyword":
@@ -2406,75 +2646,53 @@ function mapTsTypeNode(
     case "TSVoidKeyword":
       return allowNullish ? nullishAbs(undefined) : undefined;
     case "TSLiteralType":
-      return tsNodeLiteralAbs(n.literal as TsTypeNode | undefined);
+      return tsNodeLiteralAbs(node.literal);
     case "TSTemplateLiteralType":
       return absOf({ k: "prim", type: "string" });
     case "TSTypeQuery": {
-      const name = tsNodeQualifiedName(n.exprName as TsTypeNode | undefined);
-      const text = name ? activeAnnotationEnv?.valueTypes?.get(name) : undefined;
-      return text ? mapTsType(text, allowNullish) : undefined;
+      // `typeof import("spec").T` 的被查询实体就是 inline import 类型。
+      if (node.exprName.type === "TSImportType") return mapImportTypeOf(node.exprName, source, allowNullish);
+      const name = tsNodeQualifiedName(node.exprName);
+      const text = name === undefined ? undefined : activeAnnotationEnv?.valueTypes?.get(name);
+      if (text === undefined) return undefined;
+      return withDeeperAnnotationEnv(() => mapTsType(text, allowNullish));
     }
-    case "TSImportType": {
-      const arg = n.argument as TsTypeNode | undefined;
-      const name = tsNodeQualifiedName(n.qualifier as TsTypeNode | undefined);
-      if (arg?.type !== "StringLiteral" || typeof arg.value !== "string" || !name) return undefined;
-      const text = activeAnnotationEnv?.importTypes?.get(`${arg.value}#${name}`);
-      return text ? mapTsType(text, allowNullish) : undefined;
-    }
+    case "TSImportType":
+      return mapImportTypeOf(node, source, allowNullish);
     case "TSTypeOperator": {
-      const op = n.operator;
-      if (op === "keyof") {
-        const operand = mapTsTypeNode(n.typeAnnotation as TsTypeNode | undefined, source, allowNullish);
-        return operand ? tsNodeKeyofAbs(operand) : undefined;
-      }
+      const operand = mapTsTypeNode(node.typeAnnotation, source, allowNullish);
+      if (!operand) return undefined;
       // readonly / unique 只影响 dts 原文，Abs 无对应维度 ⇒ 域不变。
-      return mapTsTypeNode(n.typeAnnotation as TsTypeNode | undefined, source, allowNullish);
+      return node.operator === "keyof" ? keyofAbsOf(operand) : operand;
     }
     case "TSIndexedAccessType": {
-      const obj = mapTsTypeNode(n.objectType as TsTypeNode | undefined, source, allowNullish);
-      const idx = mapTsTypeNode(n.indexType as TsTypeNode | undefined, source, allowNullish);
-      if (!obj || !idx) return undefined;
-      const lit = idx.term?.op === "lit" ? idx.term.value : undefined;
-      if (obj.shape.k === "obj") {
-        if (typeof lit === "string") return obj.shape.slots[lit]?.value;
-        if (obj.shape.index) return obj.shape.index.value;
-        return undefined;
-      }
-      if (obj.shape.k === "tuple" && typeof lit === "number") return obj.shape.elements[lit];
-      if (obj.shape.k === "arr" && idx.shape.k === "prim" && idx.shape.type === "number") {
-        return obj.shape.element;
-      }
-      return undefined;
+      const base = mapTsTypeNode(node.objectType, source, allowNullish);
+      const idx = mapTsTypeNode(node.indexType, source, allowNullish);
+      return base && idx ? indexedAccessAbsOf(base, idx) : undefined;
     }
     case "TSMappedType": {
-      const constraint = mapTsTypeNode(n.constraint as TsTypeNode | undefined, source, allowNullish);
+      const constraint = mapTsTypeNode(node.constraint, source, allowNullish);
       const keys = tsNodeStringKeys(constraint);
-      const keyNode = n.key as TsTypeNode | undefined;
-      const keyName = keyNode?.type === "Identifier" && typeof keyNode.name === "string" ? keyNode.name : undefined;
-      const valueNode = n.typeAnnotation as TsTypeNode | undefined;
-      if (!keys || !keyName || !valueNode) return undefined;
-      const optional =
-        n.optional === true || n.optional === "+" ? true : n.optional === "-" ? false : undefined;
-      const readonly =
-        n.readonly === true || n.readonly === "+" ? true : n.readonly === "-" ? false : undefined;
+      const valueNode = node.typeAnnotation;
+      if (!keys || !valueNode) return undefined;
+      const optional = node.optional === true || node.optional === "+";
+      const readonly = node.readonly === true || node.readonly === "+";
       const slots: Extract<Shape, { k: "obj" }>["slots"] = {};
       const prev = activeAnnotationEnv;
       try {
         for (const key of keys) {
-          const env = activeAnnotationEnv;
-          activeAnnotationEnv = {
-            ...env,
-            typeParams: new Map([
-              ...(env?.typeParams ?? []),
-              [keyName, abs({ k: "prim", type: "string" }, { op: "lit", value: key }, undefined, "exact")],
-            ]),
-          };
+          // 键名作为字符串字面量类型参数绑定进值类型的解析环境。
+          const typeParams = new Map([
+            ...(prev?.typeParams ?? []),
+            [node.key.name, abs({ k: "prim", type: "string" }, { op: "lit", value: key }, undefined, "exact")],
+          ]);
+          activeAnnotationEnv = { ...prev, typeParams };
           const value = mapTsTypeNode(valueNode, source, allowNullish);
           if (!value) return undefined;
           slots[key] = {
             value,
-            ...(optional === true ? { optional: true } : {}),
-            ...(readonly === true ? { readonly: true } : {}),
+            ...(optional ? { optional: true } : {}),
+            ...(readonly ? { readonly: true } : {}),
           };
         }
       } finally {
@@ -2490,24 +2708,31 @@ function mapTsTypeNode(
     case "TSIntrinsicKeyword":
     case "TSConditionalType":
     case "TSInferType":
+    case "TSClassImplements":
+    case "TSInterfaceHeritage":
+      // 明确不支持：不是可投影的类型面（见函数头注释）。
       return undefined;
-    default:
-      // 不在 `TSType` 联合里的节点（例如 TSQualifiedName / TSTypeAnnotation）
-      // 不是可投影类型表达式；不再回落到文本语法解析。
-      return undefined;
+    default: {
+      // Babel 新增一个 TSType 种类 ⇒ 这里编译红，必须显式决定映射与否。
+      const unhandled: never = node;
+      return unhandled;
+    }
   }
 }
 
 /**
- * 结构面注解入口：`TSTypeAnnotation` / `TSType` 节点 → Abs。
- * `source` 只用于未支持节点的文本 fallback；节点本身不保留、不进缓存。
+ * 结构面注解入口：`TSTypeAnnotation` / `TSType` / 具名声明节点 → Abs。
+ *
+ * `source` 只用于节点面不认识的带实参引用的文本回落；节点本身不保留、不进
+ * 缓存。不可映射 ⇒ undefined——**文本兜底由调用方显式决定**
+ * （`?? absTypeForTsTypeText(...)`），本函数不回落。
  */
 export function absTypeForTsTypeNode(
   node: unknown,
   env?: AnnotationEnvArg,
   source?: string,
 ): Abs | undefined {
-  const n = node as TsTypeNode | undefined;
+  const n = tsTypeAnnotationOf(node);
   if (!n) return undefined;
   return withAnnotationEnv(env, () => mapTsTypeNode(n, source, true));
 }

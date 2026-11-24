@@ -19,22 +19,21 @@ import {
   formatConstraint,
   joinAbs,
   locateContractParam,
-  withProvenance,
   obj,
   type Abs,
   type EffectiveContract,
   type FormalParam,
   type NudoConstraint,
 } from "@nudojs/core";
-import { absTypeForTsTypeText, wrapPromise } from "@nudojs/core/internal";
+import { wrapPromise } from "@nudojs/core/internal";
 import {
-  declaredWins,
   domainEvidenceCases,
+  isDeclaredReturnPublished,
   widenObservedLiterals,
+  type DtsModuleSurface,
   type ReturnWidenMode,
 } from "@nudojs/service/emit";
 import { tryEvalCall, type CaseResult, type FunctionAnalysis } from "@nudojs/service";
-import { evidencePathOf } from "./selection.ts";
 
 /** 统一参数面的一条：槽位键 + entry Abs + 可选性 + 结构标记。 */
 export type ParamFace = {
@@ -75,13 +74,21 @@ export type ParamFace = {
 
 /**
  * 导出面上下文：契约域**种子重算**（Bug 612）与**违约复核**（Bug 626）需要源码
- * 与绝对路径（求值器按路径解析相对 import）。
+ * 与绝对路径（求值器按路径解析相对 import）；返回注解的可解析判据需要模块面。
+ *
+ * 只做面计算用的输入，不进任何产物 / 序列化输出。
  */
 export type FaceContext = {
   /** 源码文本 */
   source: string;
   /** 绝对路径（求值器的 fromFile） */
   filePath: string;
+  /**
+   * 模块面（类型名 / 类型形句子句的可解析事实）：与 dts 签发面**同一份**
+   * `dtsSurface`（export 透传，不重算）——声明返回面据此与 `.d.ts` 同口径地
+   * 决定「发布声明」还是「回落观测」。缺省时只有内建 / 全局类型名算可解析。
+   */
+  surface?: DtsModuleSurface;
   /** `@nudo:mock` 种子（与调度器同口径） */
   mocks?: Record<string, Abs>;
 };
@@ -415,24 +422,31 @@ export function unifiedParamFace(
   return out;
 }
 
-/**
- * 统一返回面：契约返回面优先；缺契约返回时回落**契约域种子重算**，再退观测面。
- *
- * - Bug 612：有参数契约、无返回契约时，回退**不能**直接取 `fn.combinedAbs`
- *   （那是**无约束**入口观测 ⇒ 返回位毫无信息）⇒ 先用契约参数做种子重算
- *   （与 dts 面 / check 面同一条路径），重算失败才回落观测面。
- * - Bug 618：观测返回是 `promise<…>` 时，契约返回描述的是 **await 后**的值 ⇒
- *   返回面保留 `promise<…>` 包装。
- * - Bug 619：观测面兜底**join 全部见证**（与参数面同口径），不是只取第 0 条。
- * - Bug 626：契约返回**投影前复核实现**——实现不满足契约时不投影契约，
- *   回落实现实际的返回形态（契约不是已证成的事实）。
- */
 /** 统一返回面 + 该面的拓宽来源（validator 产物共用同一决策）。 */
 export type UnifiedReturnFace = {
   abs: Abs | undefined;
   widen: ReturnWidenMode;
-};
+}
 
+/**
+ * 统一返回面：契约返回面 > 契约域种子重算 > 声明返回面 > 观测面。
+ *
+ * - Bug 612：有参数契约、无（可投影的）返回契约时，回退**不能**直接取
+ *   `fn.combinedAbs`（那是**无约束**入口观测 ⇒ 返回位毫无信息）⇒ 先用契约参数
+ *   做种子重算（与 dts 面 / check 面同一条路径），重算失败才继续下退。
+ * - Bug 618：观测返回是 `promise<…>` 时，契约返回描述的是 **await 后**的值 ⇒
+ *   返回面保留 `promise<…>` 包装。
+ * - Bug 619：观测面兜底**join 全部见证**（与参数面同口径），不是只取第 0 条。
+ * - Bug 626：契约返回**投影前复核实现**——实现不满足契约时不投影契约
+ *   （契约不是已证成的事实），按种子 / 声明 / 观测的次序下退（种子重算即
+ *   「实现在契约域下的实际返回」，与 dts 面违约时的取法同源）。
+ * - 声明返回面：返回位有**可发布**的声明注解 ⇒ 按声明域校验。可发布的判据与
+ *   dts 签发面是同一个 `isDeclaredReturnPublished`（非类型谓词、引用的类型名
+ *   在产物里全部可解析）⇒ `.d.ts` 发布声明的函数，守卫也按同一个返回类型验；
+ *   注解不可解析（dts 已落 dropped 台账、发布观测）/ 无注解 / 声明 Abs 解析
+ *   不出 ⇒ 观测面。声明是断言不是采样 ⇒ 不随观测路径拓宽（BUG-261：
+ *   `function f(): "abc"` 不得发布成 `string`）。
+ */
 export function unifiedReturnFace(
   fn: FunctionAnalysis,
   eff: EffectiveContract | undefined,
@@ -440,70 +454,36 @@ export function unifiedReturnFace(
   ctx?: FaceContext,
 ): UnifiedReturnFace {
   const observed = observedReturnFace(fn, caseResults);
-  // BUG-261：声明返回里的字面量成员是声明面事实。优先用声明文本直接映射，
-  // 避免观测侧早已拓宽成 string 后再也拿不回 `"a" | "b"`。
-  if (declaredLiteralReturn(fn)) {
-    const declared = absTypeForTsTypeText(fn.declaredReturnType);
-    if (declared) {
-      const marked = withProvenance(declared, "declared");
-      return {
-        abs: isPromiseAbs(observed) ? wrapPromise(marked) : marked,
-        widen: "none",
-      };
-    }
-  }
   // BUG-213：纯观测返回面（call@/entry@ 采样）不是函数域 ⇒ 发布前拓宽到
   // 基类型。带断言的 @nudo:case 是域声明，保持精确。
-  //
-  // BUG-261：**声明注解**里的字面量类型也是声明面事实（`function f(): "abc"`），
-  // 不是一次观测采样 ⇒ 不得随观测路径拓宽（否则 zod / standard 把返回域发布成
-  // `string`，消费方 `const x: "abc" = f()` 反而被放行成任意字符串）。
-  const observedWidened =
-    observed !== undefined &&
-    observationOnlyCases(caseResults) &&
-    !declaredLiteralReturn(fn);
+  const observedWidened = observed !== undefined && observationOnlyCases(caseResults);
   const observedDomain = observedWidened ? widenObservedLiterals(observed) : observed;
   const observedWiden: ReturnWidenMode =
     observed === undefined ? "none" : observedWidened ? "observed" : "scalar";
   const contractReturn = contractReturnFace(eff);
-  // 证据路径选择：契约返回面存在 ⇒ 走契约面（否则走观测面）
-  if (evidencePathOf(contractReturn !== undefined) === "contract" && contractReturn !== undefined) {
-    // 违约复核：实现不满足契约 ⇒ 不投影契约（回落实现实际返回）
-    if (contractViolated(fn, eff, observed, ctx)) {
-      return { abs: observedDomain, widen: observedWiden };
-    }
+  // 违约复核：实现不满足契约 ⇒ 不投影契约（Bug 626），按下面的次序继续下退。
+  if (contractReturn !== undefined && !contractViolated(fn, eff, observed, ctx)) {
     // promise 保形：契约描述的是 await 后的值；契约字面量是声明事实。
     return {
       abs: isPromiseAbs(observed) ? wrapPromise(contractReturn) : contractReturn,
       widen: "none",
     };
   }
-  // 无返回契约：优先契约域种子重算（否则返回位落无约束入口观测，Bug 612）
+  // 无可投影的返回契约：优先契约域种子重算（否则返回位落无约束入口观测，Bug 612）
   if (eff && eff.params.length > 0) {
     const seeded = seedDomainReturn(fn, eff, ctx);
     if (seeded !== undefined) return { abs: seeded, widen: "none" };
   }
+  // 声明返回面。模块面就是 export 透传的那份 `dtsSurface`（与 `dtsFaceEntry`
+  // 同一个变量）⇒ 两面的可解析事实同源；类型形参按普查名查（类成员 `C.m`）。
+  const declaredAbs = fn.declaredReturnAbs;
+  if (
+    declaredAbs !== undefined &&
+    isDeclaredReturnPublished(fn, { surface: ctx?.surface, typeParamKey: fn.name })
+  ) {
+    return { abs: declaredAbs, widen: "none" };
+  }
   return { abs: observedDomain, widen: observedWiden };
-}
-
-/**
- * BUG-261：声明返回注解里是否含**字面量类型**成员。
- *
- * 只认字符串 / 数字 / bigint / 布尔字面量（与 `ts-type-shape` 的
- * `literalAbsOf` 同集合）；`"abc" | string` 也算声明面含字面量。
- */
-function declaredLiteralReturn(fn: FunctionAnalysis): boolean {
-  const text = fn.declaredReturnType?.trim();
-  if (!text) return false;
-  return text.split("|").some((raw) => {
-    const m = raw.trim();
-    return (
-      /^(["'`])[\s\S]*\1$/.test(m) ||
-      /^-?(?:\d[\d_]*(?:\.\d+)?)(?:n)?$/.test(m) ||
-      m === "true" ||
-      m === "false"
-    );
-  });
 }
 
 /**
@@ -527,7 +507,9 @@ export function effectiveContractReturnFace(
 }
 
 /**
- * 观测返回面（**不含契约**）：`fn.combinedAbs` 优先，缺省回落**域证据 join**。
+ * 观测返回面（**不含契约、不含声明**）：`fn.combinedAbs` 优先，缺省回落**域证据
+ * join**——即「实现实际返回的形态」。违约复核（Bug 626）与契约返回面的 promise
+ * 保形（Bug 618）都以它为准；声明返回面在 `unifiedReturnFace` 里另算。
  *
  * 兜底 join 全部见证（与参数面同口径）——不是只取第 0 条断言见证（Bug 619）。
  */
@@ -535,13 +517,7 @@ export function observedReturnFace(
   fn: FunctionAnalysis,
   caseResults: readonly CaseResult[],
 ): Abs | undefined {
-  const joined = joinWitnesses(caseResults);
-  const observed = fn.combinedAbs ?? joined;
-  // 与 dts 签发面共用同一决议：声明覆盖观测 / 声明更窄 ⇒ 守卫、standard、
-  // zod 也按声明域校验；只有观测更窄或不可比时才让位观测。
-  return declaredWins(fn.declaredReturnAbs, observed)
-    ? fn.declaredReturnAbs
-    : observed;
+  return fn.combinedAbs ?? joinWitnesses(caseResults);
 }
 
 /** 域证据 case 的返回 Abs join（无证据 = undefined）。 */
