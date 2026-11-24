@@ -117,6 +117,41 @@ for (const rel of files) {
   }
 }
 
+// 4. known second implementations (Phase 4.2). 这些是曾出现过的孪生点；
+// 新增长在共享实现里，不要复制出第二份。
+const twinRules = [
+  {
+    pattern: /\bfunction\s+parseTypeExpr\s*\(/,
+    allow: null,
+    msg: "second type parser — use core absTypeForTsTypeText (or the TSType node fold)",
+  },
+  {
+    pattern: /\bfunction\s+collectImportBindings\s*\(/,
+    allow: "packages/lsp/src/symbols.ts",
+    msg: "second import-specifier scanner — extend collectImportBindings",
+  },
+  {
+    pattern: /\bfunction\s+hasProperty\s*\(/,
+    allow: "packages/service/src/emit/standard-schema.ts",
+    msg: "second key-presence predicate — extend the canonical hasProperty",
+  },
+  {
+    pattern: /\bfunction\s+renderDtsType\s*\(/,
+    allow: "packages/service/src/emit/dts-type.ts",
+    msg: "second dts type renderer — use renderDtsType",
+  },
+];
+for (const rel of files) {
+  const src = readFileSync(join(repoRoot, rel), "utf8");
+  for (const rule of twinRules) {
+    if (rule.allow === rel) continue;
+    const m = rule.pattern.exec(src);
+    if (!m) continue;
+    const line = src.slice(0, m.index).split("\n").length;
+    problems.push(`${rel}:${line} ${rule.msg}`);
+  }
+}
+
 if (problems.length > 0) {
   console.error(`Hygiene gate FAILED (${problems.length}):`);
   for (const p of problems) console.error(`  - ${p}`);

@@ -16,7 +16,8 @@
  * - 形参位：`[number, number]` 是作者申报的定长契约，不得拓宽；
  * - 各渲染器的 dropped 台账：仍由 `absToSchemaNode` / guard 自己收集。
  */
-import { abs as makeAbs, absShapeKey, type Abs, type LiteralValue } from "@nudojs/core";
+import { absShapeKey, type Abs } from "@nudojs/core";
+import { widenTopLevelAbs } from "./abs-widen.ts";
 import { widenObservedLiterals } from "./schema-generator.ts";
 
 /** validator 输出位的拓宽模式（与 `contract-face.ts` 的返回面来源同源）。 */
@@ -30,7 +31,7 @@ export type ReturnWidenMode = "observed" | "scalar" | "none";
  */
 export function projectValidatorOutput(a: Abs, widen: ReturnWidenMode = "observed"): Abs {
   if (widen === "none") return a;
-  if (widen === "scalar") return widenTopLevelObserved(a);
+  if (widen === "scalar") return widenTopLevelAbs(a);
   const widened = widenObservedLiterals(a);
   return collapseHomogeneousTuple(widened) ?? widened;
 }
@@ -60,29 +61,4 @@ function collapseHomogeneousTuple(a: Abs): Abs | undefined {
 function elementKey(a: Abs): string {
   const s = a.shape;
   return s.k === "prim" ? `prim:${s.type}` : absShapeKey(a);
-}
-
-/**
- * dts `widenTopLevelAbs` 的 validator 侧镜像：仅顶层（含 sum 成员）标量
- * 字面量 → 基类型；null / undefined / 对象 / 元组原样保留。
- */
-function widenTopLevelObserved(a: Abs): Abs {
-  const shape = a.shape;
-  if (shape.k === "sum") {
-    const members = shape.members.map(widenTopLevelObserved);
-    if (members.every((m, i) => m === shape.members[i])) return a;
-    return makeAbs({ k: "sum", members }, undefined, undefined, a.conf);
-  }
-  if (a.term?.op !== "lit" || shape.k !== "prim") return a;
-  const v: LiteralValue = a.term.value;
-  if (
-    typeof v !== "number" &&
-    typeof v !== "string" &&
-    typeof v !== "boolean" &&
-    typeof v !== "bigint"
-  ) {
-    return a;
-  }
-  const widened = makeAbs(a.shape, undefined, undefined, a.conf);
-  return a.facets !== undefined ? { ...widened, facets: a.facets } : widened;
 }

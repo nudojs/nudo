@@ -15,7 +15,7 @@ import {
 } from "../lsp-surface.ts";
 import { buildSemanticTokens, SEMANTIC_TOKEN_TYPES } from "../semantic-tokens.ts";
 import { analyzeFile } from "@nudojs/service";
-import { abs, num, str, numLit,  } from "@nudojs/core";
+import { numLit } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "../symbols.ts";
 import {
@@ -33,7 +33,6 @@ import { makeValidateDeps } from "./helpers.ts";
 import {
   injectBindings,
   normalizeFilePath,
-  parseTypeExpr,
   readSource,
   suggestCase,
   trace,
@@ -628,32 +627,6 @@ describe("LSP Integration - Narrowing Features", () => {
 describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
   const whatIfSrc = "const x = 1;\nconst y = x + 1;\n";
   const srcDeps = (src: string): AgentToolDeps => ({ readFile: () => src });
-
-  describe("parseTypeExpr (ported from MCP)", () => {
-    it("maps primitive names to Abs prims", () => {
-      expect(parseTypeExpr("number").shape).toEqual(num().shape);
-      expect(parseTypeExpr("string").shape).toEqual(str().shape);
-      expect(parseTypeExpr("boolean").shape.k).toBe("prim");
-      expect(parseTypeExpr("bigint").shape).toEqual(abs({ k: "prim", type: "bigint" }, undefined, undefined, "exact").shape);
-      expect(parseTypeExpr("symbol").shape).toEqual(abs({ k: "prim", type: "symbol" }, undefined, undefined, "exact").shape);
-      expect(parseTypeExpr("null").term?.op).toBe("lit");
-      expect(parseTypeExpr("undefined").term?.op).toBe("lit");
-    });
-
-    it("builds unions from `|` expressions", () => {
-      const u = parseTypeExpr("string | null");
-      expect(u.shape.k).toBe("sum");
-      if (u.shape.k === "sum") {
-        expect(u.shape.members).toHaveLength(2);
-        expect(u.shape.members[0]!.shape).toEqual(str().shape);
-        expect(u.shape.members[1]!.term?.op).toBe("lit");
-      }
-    });
-
-    it("falls back to unknown for unrecognized names", () => {
-      expect(parseTypeExpr("Date").shape.k).toBe("unknown");
-    });
-  });
 
   describe("typeExprToDirective / injectBindings", () => {
     it("translates agent type expressions to @nudo:as directive syntax", () => {

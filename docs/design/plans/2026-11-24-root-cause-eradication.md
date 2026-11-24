@@ -4,6 +4,11 @@
 > **纪律**：不按 bug 编号施工；bug ID 只作为覆盖断言与验收清单。每个阶段只收敛
 > 一个语义决策，禁止用「补分支 + 回归钉」代替结构修复。
 > **交付后**：按 `docs/README.md` 删除正文，证据留在测试 / changeset / git。
+>
+> **进度（2026-11-24）**：Phase 0 / 1 / 2 完成（2.5 的 degraded 上屏由既有
+> `export` 阻断诊断覆盖）；Phase 4.1 / 4.2 完成（矩阵进 CI + 孪生实现
+> hygiene 门）；Phase 3 待做。Phase 3 前置：
+> `SemanticIndex` 阶段 0 只带导出槽名，尚不含 dts 需要的值 / 类型 / 类成员节点。
 
 ## 0. 目标与非目标
 
@@ -145,6 +150,55 @@
 | BUG-480（部分） | 构造签名成员模型；`make` 通过 | `tmp/eradicate/b480.ts`：`make(c: Ctor) => string`；**残余**：`Both` 的 call + construct 双签名（Abs fn 只有一个签名槽）仍 `=> never`，需表示层扩展（另立 A 类） |
 
 ## 3.1 实施记录
+
+### 2026-11-24 · Phase 3.1 前置实测
+
+`SemanticIndex.exportSlots` 与 `dtsModuleSurface.exportBindings` 的直接对拍（5 个
+代表源）暴露三类不可直接替换的差异：
+
+- 索引含类型导出槽 `I` / `T`，dts 面把它们放在 `typeOnlyExportBindings` / `typeDeclarations`；
+- 索引把 namespace 成员 `q` 也登记为导出槽，dts 面只在 namespace 内部发射；
+- CJS 索引槽名是 `exports.foo` / `module.exports`，dts 面归一成 `foo` / 对象成员键。
+
+⇒ 3.1 不能只换名字来源；索引需先补 `exportSlot.kind`（value / type / reexport /
+cjs-member）、归一槽名、以及按 `SymbolId` 取声明节点的表。完成后再迁移
+`dtsModuleSurface`，最后删独立扫描。
+
+### 2026-11-24 · Phase 4.2 完成
+
+- 删除 LSP 死代码 `parseTypeExpr`（第二份类型解析；无生产调用方）及其测试。
+- `scripts/check-hygiene.mjs` 新增孪生实现门：`parseTypeExpr`（类型解析）、非 `symbols.ts` 的 `collectImportBindings`（说明符扫描）、非 `standard-schema.ts` 的 `hasProperty`（键在场谓词）、非 `dts-type.ts` 的 `renderDtsType`（类型渲染）均红。
+
+### 2026-11-24 · Phase 4.1 完成
+
+- `scripts/face-matrix.ts` 增加 `checkIssues` 面：`degraded-entry` 用例要求 `nudo check --json` 的 `issues[].code` 含 `nudo:entry-may-throw` ⇒ 降级不再静默。
+- 矩阵从 23 例增至 **24 例**，基线同步；`pnpm run face:matrix` 进入 CI（`ts_changed` 时运行），产物自编译 + 消费方编译 + 降级上屏三条不变量同一条命令。
+
+### 2026-11-24 · Phase 2.4 完成
+
+- 删除三份 `widenTopLevel*` 复本：`dts-type.ts` 的 `widenTopLevelDts`、`dts-widen.ts` 的 `widenTopLevelAbs` / `widenLiteralToPrimAbs`、`projection-policy.ts` 的 `widenTopLevelObserved`；唯一实现落在 `abs-widen.ts`，`dts-type` / `dts-widen` / `dts-signature` / `projection-policy` 共用。
+- 字面量闸门审计：`literalConst`（Abs 顶层的 `as const` / primitive literal）与 `literalTypeTextOfInit`（default / namespace 成员的源码初始化器文本）输入源不同、不是同一决议，未合并。
+- `declarationMorePrecise` 与 `declaredNarrower` / `declaredCoversObserved` 已无代码引用。
+
+### 2026-11-24 · Phase 2.3 / 2.4 首片
+
+- `resolveDtsPublicType` 收编 `declarationMorePrecise` 的全部白名单规则（enum / 泛型实参 / lib 全局 / 内建占位 / readonly / 函数 / 字面量 / `| undefined`）；`tsDeclaredReturn` 不再保留本地 `declarationMorePrecise`。
+- `observedReturnFace`（guard / standard / zod 的统一返回面）改用 `declaredWins`：声明覆盖观测 / 声明更窄 ⇒ 校验器与 dts 签发同一域。
+- hover / whatIf 经由 `$fnVal.returnType` 读取注解旁路的声明返回，不另起声明 vs 观测决议。
+- 仍待：各 emitter 局部 widen（`widenReturnAbs` / `widenModuleValueAbs`）与字面量闸门（`literalConst` / `literalTypeTextOfInit`）去重。
+
+### 2026-11-24 · Phase 2.2 首片
+
+- 新增 `service/src/emit/dts-public-type.ts` 的 `declaredWins(declared, observed)`：声明 ⊇ 观测（含等价）或声明更窄 ⇒ 保留声明。
+- `tsDeclaredReturn` 的 `declaredNarrower` / `declaredCoversObserved` 合并为一次 `declaredWins` 调用；类成员 `refineObservedReturn` 改用同一 Abs 判据（具名类型 Abs 不可解析时回退文本成员判据）。
+- 值通道保持既有的 declared-first（`declaredText ?? render()`）；字面量闸门去重仍归 2.4。
+
+### 2026-11-24 · Phase 1 完成
+
+- **节点 total fold**：`TSTYPE_NODE_SUPPORT` 以 `satisfies Record<TSType["type"], "node" | "unsupported">` 冻结 Babel 全部 TSType 种类；`mapTsTypeNode` 增字面量 / 模板 / `typeof` / inline import / `keyof` / 索引访问 / mapped type / 标签·可选·rest 元组 / 谓词 / `this` 分支；默认分支不再回落文本。
+- **调用方切换**：入口域 / 构造参数 / 类入口 / 类字段 / dts 声明返回均走节点优先（`FormalParam.tsTypeNode`、`FunctionAnalysis.declaredReturnTypeNode`、`declaredReturnAbs`、`nudoTypeNode`）；文本解析仅保留给**文本型 API**（外部契约文本 / dts 注解原文 / 导入类型表），不再服务于源码 AST 注解。
+- **穷尽性门**：新增 `TSTYPE_NODE_SUPPORT` 编译期 `satisfies` + `algebra-eval-core` 的 total-fold / explicit-unsupported 测试；构造矩阵保持 23/0。
+
 
 ### 2026-11-24 · Phase 0 + Phase 1 首片
 

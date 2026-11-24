@@ -37,8 +37,10 @@ import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { transpileFnBodyStmts, emitFnBlockBody, paramNamesOf } from "./stmt.ts";
 import { asyncBodyPlan } from "./async-plan.ts";
 import {
+  absTypeForTsTypeNode,
   absTypeForTsTypeText,
   entryAbsLiteralSourceOf,
+  namedTypeNodesForSource,
   namedTypeTextsForSource,
   resolveNamedTypeText,
 } from "../../contract/ts-type-shape.ts";
@@ -51,13 +53,26 @@ import {
  * 注解不可映射 / 无注解 ⇒ undefined（保持旧行为，不伪造）。
  */
 function classFieldDeclaredSource(
-  mem: { nudoTypeText?: string },
+  mem: { nudoTypeText?: string; nudoTypeNode?: unknown },
   opts: TranspileOptions,
 ): string | undefined {
   const text = mem.nudoTypeText;
-  if (!text) return undefined;
+  if (!text && mem.nudoTypeNode === undefined) return undefined;
   const named = opts.source ? namedTypeTextsForSource(opts.source) : undefined;
-  const abs = absTypeForTsTypeText(resolveNamedTypeText(text, named));
+  const nodeAbs =
+    mem.nudoTypeNode !== undefined
+      ? absTypeForTsTypeNode(
+          mem.nudoTypeNode,
+          {
+            ...(named ? { namedTypes: named } : {}),
+            ...(opts.source ? { namedTypeNodes: namedTypeNodesForSource(opts.source) } : {}),
+          },
+          opts.source,
+        )
+      : undefined;
+  const abs =
+    nodeAbs ??
+    (text ? absTypeForTsTypeText(resolveNamedTypeText(text, named)) : undefined);
   return abs ? entryAbsLiteralSourceOf(abs) : undefined;
 }
 

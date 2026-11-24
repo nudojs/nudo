@@ -28,6 +28,7 @@ import {
 } from "@nudojs/core";
 import { absTypeForTsTypeText, wrapPromise } from "@nudojs/core/internal";
 import {
+  declaredWins,
   domainEvidenceCases,
   widenObservedLiterals,
   type ReturnWidenMode,
@@ -535,7 +536,12 @@ export function observedReturnFace(
   caseResults: readonly CaseResult[],
 ): Abs | undefined {
   const joined = joinWitnesses(caseResults);
-  return fn.combinedAbs ?? joined;
+  const observed = fn.combinedAbs ?? joined;
+  // 与 dts 签发面共用同一决议：声明覆盖观测 / 声明更窄 ⇒ 守卫、standard、
+  // zod 也按声明域校验；只有观测更窄或不可比时才让位观测。
+  return declaredWins(fn.declaredReturnAbs, observed)
+    ? fn.declaredReturnAbs
+    : observed;
 }
 
 /** 域证据 case 的返回 Abs join（无证据 = undefined）。 */

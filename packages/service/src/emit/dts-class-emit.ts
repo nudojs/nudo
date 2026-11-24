@@ -5,7 +5,7 @@
  * 分析面签名行解析，以及导出形态 / 构造器 / 字段 / 超类子的组装。继承链证据
  * 由调用方作为参数注入，模块本身不依赖 dts 投影上下文。
  */
-import { sanitizeCommentText } from "@nudojs/core/internal";
+import { absTypeForTsTypeText, sanitizeCommentText } from "@nudojs/core/internal";
 import { WELL_KNOWN_SYMBOLS } from "./dts-type.ts";
 import type {
   DtsClassFieldSurface,
@@ -14,6 +14,7 @@ import type {
 } from "./dts-ir.ts";
 import { exportNameRepr } from "./export-binding.ts";
 import { formatPropKey, paramDeclOf, splitTopLevel } from "./dts-text.ts";
+import { declaredWins } from "./dts-public-type.ts";
 
 /**
  * 静态字段修饰符前缀（BUG-041）：`static` 必须排在 `readonly` 之前
@@ -133,6 +134,13 @@ export function refineObservedReturn(
 ): string {
   if (annotationEvidence === undefined) return observed;
   if (observed === "unknown") return annotationEvidence;
+  // 与 tsDeclaredReturn 共用同一 Abs 决议：声明覆盖观测 / 声明更窄 ⇒ 保留
+  // 声明；不可比时才回退下面的文本成员判据（具名类型 Abs 解析不到时）。
+  const observedAbs = absTypeForTsTypeText(observed);
+  const declaredAbs = absTypeForTsTypeText(annotationEvidence);
+  if (observedAbs && declaredAbs) {
+    return declaredWins(declaredAbs, observedAbs) ? annotationEvidence : observed;
+  }
   const members = observed.split("|").map((s) => s.trim());
   if (members.length < 2) return observed;
   return members.includes(annotationEvidence) ? annotationEvidence : observed;

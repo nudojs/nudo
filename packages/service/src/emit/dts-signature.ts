@@ -18,6 +18,10 @@ import {
 import { absTypeForTsTypeText, isJsBindingIdent } from "@nudojs/core/internal";
 import type { AnalysisResult, CaseResult, FunctionAnalysis } from "../analyzer.ts";
 import { absToTSTypeIr } from "./dts-context.ts";
+import {
+  isNoInfoObservedType,
+  resolveDtsPublicType,
+} from "./dts-public-type.ts";
 import { BUILTIN_GENERIC_BRANDS } from "./dts-type.ts";
 import {
   TS_TYPE_TOKENS,
@@ -37,11 +41,8 @@ import {
   splitTopLevel,
   typeParamNamesInClause,
 } from "./dts-text.ts";
-import {
-  widenParamAbs,
-  widenReturnAbs,
-  widenTopLevelAbs,
-} from "./dts-widen.ts";
+import { widenTopLevelAbs } from "./abs-widen.ts";
+import { widenParamAbs, widenReturnAbs } from "./dts-widen.ts";
 import { isNoInfoType } from "./dts-type-text.ts";
 import { domainEvidenceCases } from "./domain-cases.ts";
 import { tsAnnotationShape, tsAnnotationTypeText } from "../ts-annotation.ts";
@@ -111,79 +112,6 @@ export function predLiteralSet(p: Pred | undefined, self: Term): LiteralValue[] 
  * 原文仍可能是 `any` ⇒ 两者都算「不携带外延」，不能当作更精确的证据。
  */
 
-
-/**
- * BUG-176：观测**联合**里含 `unknown` / `any` 成员时整串无信息。
- *
- * TS 里 `unknown` / `any` 吸收联合的其它成员（`unknown | number` ≡ `unknown`，
- * `any | string` ≡ `any`）⇒ 声明返回注解仍是唯一可用的证据。旧的 `isNoInfoType`
- * 只认整串等于 `unknown`/`any`，`hasMethod` 的观测串 `unknown | number` 因此
- * 挡住了声明注解 `: number`（产物返回位比 tsc 宽）。
- */
-export function isNoInfoObservedType(ts: string): boolean {
-  if (isNoInfoType(ts)) return true;
-  const members = splitTopLevel(ts, "|").map((m) => m.trim());
-  return members.length > 1 && members.some((m) => isNoInfoType(m));
-}
-
-/** 观测串是内建泛型的**占位**形态（`Map<unknown, unknown>` 等，BUG-254）。 */
-const PLACEHOLDER_BUILTIN_TYPES: ReadonlySet<string> = new Set(
-  BUILTIN_GENERIC_BRANDS.values(),
-);
-export function isPlaceholderBuiltinType(ts: string): boolean {
-  const t = ts.trim();
-  if (PLACEHOLDER_BUILTIN_TYPES.has(t)) return true;
-  return /^(?:Readonly|Weak)?(?:Map|Set|Array|Promise|Generator|Iterator|Iterable)[A-Za-z]*<(?:unknown|object)(?:,\s*(?:unknown|object))?>$/.test(
-    t,
-  );
-}
-
-/** 顶层成员里是否出现 `readonly` 前缀（`readonly T[]` / `readonly [A, B]`）。 */
-export function hasReadonlyTypePrefix(text: string): boolean {
-  return splitTopLevel(text, "|").some((m) => /^readonly\s+/.test(m.trim()));
-}
-
-/** 声明类型文本是否函数类型（`() => number` / `(b: number) => string`）。 */
-export function isFunctionTypeText(text: string): boolean {
-  return tsAnnotationShape(text)?.k === "fn";
-}
-
-/**
- * BUG-245：注解引用了 **lib 全局纯类型名**（Abs 无法表达）。这些名字是声明
- * 面事实，观测（`null | [string] & {…}` / `Promise<{…}>`）只能给结构近似
- * ⇒ 返回位必须保留声明注解。
- */
-const LIB_GLOBAL_TYPE_NAMES: ReadonlySet<string> = new Set([
-  "IArguments",
-  "CallableFunction",
-  "NewableFunction",
-  "RegExpMatchArray",
-  "RegExpExecArray",
-  "PromiseSettledResult",
-  "PromiseFulfilledResult",
-  "PromiseRejectedResult",
-  "Disposable",
-  "AsyncDisposable",
-  "DisposableStack",
-  "AsyncDisposableStack",
-  "SuppressedError",
-]);
-export function hasLibGlobalTypeText(text: string): boolean {
-  return annotationTypeRefs(text).some((n) => LIB_GLOBAL_TYPE_NAMES.has(n));
-}
-
-/** 联合成员里是否有**字面量类型**（`"a"` / `42` / `true` / `10n`）。 */
-export function hasLiteralTypeText(text: string): boolean {
-  return splitTopLevel(text, "|").some((raw) => {
-    const m = raw.trim();
-    return (
-      /^["'`]/.test(m) ||
-      /^-?(?:\d+(?:\.\d+)?|\d[\d_]*)(?:n)?$/.test(m) ||
-      m === "true" ||
-      m === "false"
-    );
-  });
-}
 
 /** JS 字面量值 → TS 类型字面量（`42` / `"s"` / `true` / `null` / `undefined`） */
 export function tsLiteralType(v: LiteralValue): string {
@@ -1823,46 +1751,17 @@ export function tsDeclaredReturn(
           typeParams: new Map([...declared].map((n) => [n, anyAbs])),
         })
       : undefined);
-  const declaredNarrower =
-    declaredAbs !== undefined &&
-    observedAbs !== undefined &&
-    leqAbs(declaredAbs, observedAbs).ok &&
-    !leqAbs(observedAbs, declaredAbs).ok;
-  // 声明是观测的**超类型**（`(): keyof User` 而观测 `"name"`、`(): string |
-  // number` 而观测 `number`、`(): {a?: number; b: string}` 而观测 `{b:"s"}`）：
-  // 声明仍是有效公开契约，且消费者按声明收窄/拓宽 ⇒ 保留声明。此前只认
-  // 「声明更窄」，把这一类全部让给观测（报告 422/426/455/498 的共同政策面）。
-  const declaredCoversObserved =
-    declaredAbs !== undefined &&
-    observedAbs !== undefined &&
-    leqAbs(observedAbs, declaredAbs).ok;
-  // BUG-403 配套：enum 作返回注解时 tsc 保留 `Color`，不会改写成成员字面量
-  // 联合 / 基类型。观测域是新映射出的 `"red" | "green"` ⇒ 必须让声明名胜出。
-  const bareName = raw.trim();
-  const namedEnumReturn =
-    /^[A-Za-z_$][\w$]*$/.test(bareName) &&
-    ctx?.surface?.values.get(bareName)?.kind === "enum";
-  // BUG-393：用户泛型类的具体返回注解（`Box<number>`）不能被裸 `Box` /
-  // `Box<unknown>` 观测覆盖——分析面 brand 不携带类型实参。
-  const genericRef = /^([A-Za-z_$][\w$]*)<[\s\S]+>$/.exec(bareName);
-  const genericDeclMorePrecise =
-    genericRef !== null &&
-    (observed === genericRef[1] || observed.startsWith(`${genericRef[1]}<unknown`));
-  const declarationMorePrecise =
-    declaredNarrower ||
-    declaredCoversObserved ||
-    namedEnumReturn ||
-    genericDeclMorePrecise ||
-    hasLibGlobalTypeText(raw) ||
-    isPlaceholderBuiltinType(observed) ||
-    (hasReadonlyTypePrefix(raw) && !observed.includes("readonly")) ||
-    (isFunctionTypeText(raw) && /=>\s*unknown/.test(observed)) ||
-    (hasLiteralTypeText(raw) && !hasLiteralTypeText(observed)) ||
-    (observed.includes("| undefined") && !raw.includes("| undefined"));
+  const decision = resolveDtsPublicType({
+    ...(declaredAbs !== undefined ? { declaredAbs } : {}),
+    ...(observedAbs !== undefined ? { observedAbs } : {}),
+    declaredText: raw,
+    observedText: observed,
+    ...(ctx?.surface ? { surface: ctx.surface } : {}),
+  });
   if (
     !usesTypeParam &&
     raw.trim() !== "this" &&
-    !declarationMorePrecise &&
+    decision === "observed" &&
     !isNoInfoObservedType(observed) &&
     observed !== "never"
   ) {

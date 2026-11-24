@@ -32,9 +32,20 @@ const BASELINE = join(ROOT, "docs/reports/face-matrix-baseline.json");
 const TSC_FLAGS = ["--ignoreConfig", "--strict", "--target", "es2022", "--lib", "es2024,dom", "--module", "esnext", "--moduleResolution", "bundler", "--noEmit"];
 
 /** expectDts 的每一条都取自 tsc `--declaration` 的声明文本（空白归一后）。 */
-type Case = { name: string; src: string; check?: string[]; checkNot?: string[]; dts?: string[]; oracle?: false };
+type Case = {
+  name: string;
+  src: string;
+  check?: string[];
+  checkNot?: string[];
+  /** `nudo check --json` 的 issues[].code 必须全部出现（degraded 上屏）。 */
+  checkIssues?: string[];
+  dts?: string[];
+  oracle?: false;
+};
 
 const CASES: Case[] = [
+  { name: "degraded-entry", checkIssues: ["nudo:entry-may-throw"],
+    src: `export function degraded(x: any) { return x.foo; }` },
   { name: "interface-extends", check: ["name: string", "role: string"],
     src: `interface Base { name: string }
 interface Admin extends Base { role: string }
@@ -132,9 +143,12 @@ const missing = (text: string, expect: readonly string[]): string[] => {
 
 // ---------------------------------------------------------------- faces
 
-type CheckJson = { signatures?: Array<{ name: string; params: string[]; paramTypes?: string[]; display: string; abs: string }> };
+type CheckJson = {
+  signatures?: Array<{ name: string; params: string[]; paramTypes?: string[]; display: string; abs: string }>;
+  issues?: Array<{ code?: string }>;
+};
 
-const checkCache = new Map<string, { text?: string; error?: string }>();
+const checkCache = new Map<string, { text?: string; issues?: string[]; error?: string }>();
 const dtsCache = new Map<string, { dts?: string; error?: string }>();
 const tscCache = new Map<string, { ok: boolean; output: string }>();
 
@@ -145,18 +159,21 @@ function signatureText(json: CheckJson): string {
     .join("\n");
 }
 
-function checkFace(source: string, fixture: string): { text?: string; error?: string } {
+function checkFace(source: string, fixture: string): { text?: string; issues?: string[]; error?: string } {
   const hit = checkCache.get(source);
   if (hit) return hit;
   const res = runCli(["check", "--json", fixture]);
-  let out: { text?: string; error?: string };
+  let out: { text?: string; issues?: string[]; error?: string };
   if (res.error) {
     out = { error: res.error };
   } else {
     try {
       const json = JSON.parse(res.stdout.trim()) as CheckJson;
       if (!Array.isArray(json.signatures)) throw new Error("no signatures[] in check --json");
-      out = { text: signatureText(json) };
+      out = {
+        text: signatureText(json),
+        issues: (json.issues ?? []).map((i) => i.code).filter((c): c is string => !!c),
+      };
     } catch (err) {
       out = { error: `check --json unparsable (exit ${res.status}): ${(err as Error).message}${res.stderr.trim() ? `\n${tail(res.stderr)}` : ""}` };
     }
@@ -235,16 +252,23 @@ function runCase(c: Case, fixture: string): CaseResult {
   const reasons = new Set<FailCode>();
   const observations: CaseResult["observations"] = {};
 
-  if (c.check) {
+  if (c.check || c.checkIssues?.length) {
     const res = checkFace(c.src, fixture);
     if (res.error) {
       faces.check = { status: "fail", detail: res.error };
       reasons.add("cli-error");
     } else {
       observations.check = res.text;
-      const gone = missing(res.text ?? "", c.check);
+      const gone = c.check ? missing(res.text ?? "", c.check) : [];
       const forbidden = (c.checkNot ?? []).filter((s) => (res.text ?? "").includes(s));
-      const bad = [...gone.map((s) => `missing: ${s}`), ...forbidden.map((s) => `forbidden: ${s}`)];
+      const absentIssues = (c.checkIssues ?? []).filter(
+        (code) => !(res.issues ?? []).includes(code),
+      );
+      const bad = [
+        ...gone.map((s) => `missing: ${s}`),
+        ...forbidden.map((s) => `forbidden: ${s}`),
+        ...absentIssues.map((s) => `missing issue: ${s}`),
+      ];
       faces.check = bad.length > 0 ? { status: "fail", detail: bad.join(" | ") } : { status: "pass" };
       if (bad.length > 0) reasons.add("check-mismatch");
     }

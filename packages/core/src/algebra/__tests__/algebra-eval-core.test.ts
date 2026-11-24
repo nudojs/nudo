@@ -3509,6 +3509,116 @@ type Alias = Admin;
     ).toBe("fn");
   });
 
+  it("TSType 节点 total fold：字面量 / keyof / 索引访问 / mapped / 元组 / typeof / import / 谓词", () => {
+    const lit = (value: unknown) => ({ type: "TSLiteralType", literal: { type: "StringLiteral", value } });
+    expect(absTypeForTsTypeNode(lit("a"))!.term).toEqual({ op: "lit", value: "a" });
+    expect(absTypeForTsTypeNode({ type: "TSTemplateLiteralType" })!.shape).toEqual({
+      k: "prim",
+      type: "string",
+    });
+    const keyof = absTypeForTsTypeNode({
+      type: "TSTypeOperator",
+      operator: "keyof",
+      typeAnnotation: {
+        type: "TSTypeLiteral",
+        members: [
+          { type: "TSPropertySignature", key: { type: "Identifier", name: "a" }, typeAnnotation: { type: "TSTypeAnnotation", typeAnnotation: { type: "TSNumberKeyword" } } },
+          { type: "TSPropertySignature", key: { type: "Identifier", name: "b" }, typeAnnotation: { type: "TSTypeAnnotation", typeAnnotation: { type: "TSStringKeyword" } } },
+        ],
+      },
+    })!;
+    expect(keyof.shape.k).toBe("sum");
+    expect(
+      keyof.shape.k === "sum" ? keyof.shape.members.map((m) => m.term) : [],
+    ).toEqual([{ op: "lit", value: "a" }, { op: "lit", value: "b" }]);
+
+    const indexed = absTypeForTsTypeNode({
+      type: "TSIndexedAccessType",
+      objectType: {
+        type: "TSTypeLiteral",
+        members: [
+          { type: "TSPropertySignature", key: { type: "Identifier", name: "name" }, typeAnnotation: { type: "TSTypeAnnotation", typeAnnotation: { type: "TSStringKeyword" } } },
+        ],
+      },
+      indexType: { type: "TSLiteralType", literal: { type: "StringLiteral", value: "name" } },
+    })!;
+    expect(indexed.shape).toEqual({ k: "prim", type: "string" });
+
+    const mapped = absTypeForTsTypeNode({
+      type: "TSMappedType",
+      key: { type: "Identifier", name: "K" },
+      constraint: {
+        type: "TSUnionType",
+        types: [
+          { type: "TSLiteralType", literal: { type: "StringLiteral", value: "a" } },
+          { type: "TSLiteralType", literal: { type: "StringLiteral", value: "b" } },
+        ],
+      },
+      typeAnnotation: { type: "TSNumberKeyword" },
+    })!;
+    expect(mapped.shape).toMatchObject({
+      k: "obj",
+      slots: {
+        a: { value: { shape: { k: "prim", type: "number" } } },
+        b: { value: { shape: { k: "prim", type: "number" } } },
+      },
+    });
+
+    const optionalTuple = absTypeForTsTypeNode({
+      type: "TSTupleType",
+      elementTypes: [
+        { type: "TSNumberKeyword" },
+        { type: "TSOptionalType", typeAnnotation: { type: "TSStringKeyword" } },
+      ],
+    })!;
+    expect(optionalTuple.shape.k).toBe("sum");
+    const restTuple = absTypeForTsTypeNode({
+      type: "TSTupleType",
+      elementTypes: [
+        { type: "TSNumberKeyword" },
+        { type: "TSRestType", typeAnnotation: { type: "TSArrayType", elementType: { type: "TSStringKeyword" } } },
+      ],
+    })!;
+    expect(restTuple.shape).toMatchObject({
+      k: "tuple",
+      elements: [{ shape: { k: "prim", type: "number" } }],
+      rest: { shape: { k: "prim", type: "string" } },
+    });
+    const namedTuple = absTypeForTsTypeNode({
+      type: "TSTupleType",
+      elementTypes: [
+        { type: "TSNamedTupleMember", label: { type: "Identifier", name: "x" }, elementType: { type: "TSNumberKeyword" } },
+      ],
+    })!;
+    expect(namedTuple.shape).toMatchObject({ k: "tuple", elements: [{ shape: { k: "prim", type: "number" } }] });
+
+    const query = absTypeForTsTypeNode(
+      { type: "TSTypeQuery", exprName: { type: "Identifier", name: "cfg" } },
+      { valueTypes: new Map([["cfg", "{ port: number }"]]) },
+    )!;
+    expect(query.shape).toMatchObject({ k: "obj", slots: { port: { value: { shape: { k: "prim", type: "number" } } } } });
+    const imported = absTypeForTsTypeNode(
+      {
+        type: "TSImportType",
+        argument: { type: "StringLiteral", value: "./types" },
+        qualifier: { type: "Identifier", name: "User" },
+      },
+      { importTypes: new Map([["./types#User", "{ name: string }"]]) },
+    )!;
+    expect(imported.shape).toMatchObject({ k: "obj", slots: { name: { value: { shape: { k: "prim", type: "string" } } } } });
+    expect(absTypeForTsTypeNode({ type: "TSTypePredicate" })!.shape).toEqual({ k: "prim", type: "boolean" });
+    expect(absTypeForTsTypeNode({ type: "TSThisType" })!.shape).toEqual({ k: "any" });
+  });
+
+  it("TSType 种类穷尽表：条件 / infer / intrinsic / heritage 明确不支持（不回落到文本）", () => {
+    expect(absTypeForTsTypeNode({ type: "TSConditionalType" })).toBeUndefined();
+    expect(absTypeForTsTypeNode({ type: "TSInferType" })).toBeUndefined();
+    expect(absTypeForTsTypeNode({ type: "TSIntrinsicKeyword" })).toBeUndefined();
+    expect(absTypeForTsTypeNode({ type: "TSClassImplements" })).toBeUndefined();
+    expect(absTypeForTsTypeNode({ type: "TSInterfaceHeritage" })).toBeUndefined();
+    expect(absTypeForTsTypeNode({ type: "TSUnknownNodeKind" })).toBeUndefined();
+  });
+
   it("显式 unknown 注解带声明项，不再被当成推断失败", () => {
     const a = absTypeForTsTypeText("unknown");
     expect(a?.shape).toEqual({ k: "unknown" });

@@ -67,10 +67,6 @@ import {
   classMemberKeyName,
 } from "@nudojs/parser";
 import {
-  abs,
-  num,
-  str,
-  bool,
   formatAbs,
   formatShape,
   checkSource,
@@ -139,28 +135,6 @@ export type AgentToolDeps = {
  */
 export function textResult(text: string): AgentToolResult {
   return { content: [{ type: "text", text }] };
-}
-
-/**
- * Parse an agent-facing type expression into an Abs.
- * Ported from packages/mcp/src/tools.ts: primitive names, `|` unions,
- * everything else unknown.
- */
-export function parseTypeExpr(expr: string): Abs {
-  const trimmed = expr.trim();
-  if (trimmed === "number") return num();
-  if (trimmed === "string") return str();
-  if (trimmed === "boolean") return bool();
-  if (trimmed === "null") return abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
-  if (trimmed === "undefined") return abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
-  if (trimmed === "bigint") return abs({ k: "prim", type: "bigint" }, undefined, undefined, "exact");
-  if (trimmed === "symbol") return abs({ k: "prim", type: "symbol" }, undefined, undefined, "exact");
-  if (trimmed.includes("|")) {
-    const members = trimmed.split("|").map(parseTypeExpr);
-    if (members.length === 1) return members[0]!;
-    return abs({ k: "sum", members }, undefined, undefined, "exact");
-  }
-  return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
 /**

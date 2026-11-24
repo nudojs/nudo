@@ -9,6 +9,7 @@
     "class-field-annotation": [],
     "construct-signature": [],
     "default-export-literal": [],
+    "degraded-entry": [],
     "destructured-default-optional": [],
     "error-subclass": [],
     "export-equals": [],
