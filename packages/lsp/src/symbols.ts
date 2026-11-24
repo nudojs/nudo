@@ -2,7 +2,7 @@
  * 文档符号 + 跨文件导航（definition / references / rename）。
  * 本文件只做 AST 静态扫描；fs 解析走 service 的相对路径规则。
  */
-import type { Node, Identifier, FunctionDeclaration, FunctionExpression, ArrowFunctionExpression, ClassDeclaration, ClassMethod, ObjectMethod, TSDeclareMethod } from "@babel/types";
+import type { Node, File, Identifier, FunctionDeclaration, FunctionExpression, ArrowFunctionExpression, ClassDeclaration, ClassMethod, ObjectMethod, TSDeclareMethod } from "@babel/types";
 import traverse from "@babel/traverse";
 import { traverseEsm } from "./traverse-esm.ts";
 import {
@@ -24,6 +24,14 @@ import type { SymbolInfo, ReferenceInfo, SymbolTable, SourceLocation } from "@nu
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { sidecarPathOf } from "@nudojs/core";
+import { buildSemanticIndex } from "@nudojs/core/internal";
+
+type IndexSymbol = ReturnType<typeof buildSemanticIndex>["symbols"] extends ReadonlyMap<
+  unknown,
+  infer V
+>
+  ? V
+  : never;
 
 function locFromNode(node: Node): SourceLocation {
   return {
@@ -2383,46 +2391,20 @@ export function collectImportBindings(
   fromFile: string,
 ): Map<string, ImportBinding> {
   const map = new Map<string, ImportBinding>();
-  for (const stmt of programBody(ast)) {
-    if (stmt.type !== "ImportDeclaration") continue;
-    const spec = stmt.source.value as string;
-    const resolvedPath = resolveRelativeModule(spec, fromFile);
-    for (const specNode of stmt.specifiers ?? []) {
-      if (specNode.type === "ImportSpecifier") {
-        const imported = specNode.imported.type === "Identifier" ? specNode.imported.name : String(specNode.imported.value);
-        map.set(specNode.local.name, {
-          spec,
-          importedName: imported,
-          resolvedPath,
-          local: specNode.local.name,
-          importedLoc: locFromNode(specNode.imported),
-          localLoc: locFromNode(specNode.local),
-          aliased: imported !== specNode.local.name,
-        });
-      } else if (specNode.type === "ImportDefaultSpecifier") {
-        // default 导入：imported 侧与 local 侧是同一个标识符节点
-        map.set(specNode.local.name, {
-          spec,
-          importedName: "default",
-          resolvedPath,
-          local: specNode.local.name,
-          importedLoc: locFromNode(specNode.local),
-          localLoc: locFromNode(specNode.local),
-          aliased: false,
-        });
-      } else if (specNode.type === "ImportNamespaceSpecifier") {
-        // namespace：不支持精确跳转到单个导出（引用面走 `ns.<name>` 成员访问）
-        map.set(specNode.local.name, {
-          spec,
-          importedName: "*",
-          resolvedPath,
-          local: specNode.local.name,
-          importedLoc: locFromNode(specNode.local),
-          localLoc: locFromNode(specNode.local),
-          aliased: false,
-        });
-      }
-    }
+  // 单点：import 说明符解析只走 `SemanticIndex.imports`（core 绑定产出的
+  // 声明事实），本文件不再独立遍历 ImportDeclaration。
+  const index = buildSemanticIndex(ast as unknown as File);
+  for (const [local, b] of index.imports) {
+    const resolvedPath = resolveRelativeModule(b.source, fromFile);
+    map.set(local, {
+      spec: b.source,
+      importedName: b.importedName,
+      ...(resolvedPath === undefined ? {} : { resolvedPath }),
+      local,
+      importedLoc: locFromNode(b.importedNode),
+      localLoc: locFromNode(b.localNode),
+      aliased: b.kind === "named" && b.importedName !== local,
+    });
   }
   return map;
 }
@@ -2679,20 +2661,9 @@ export function findExportDefinition(
   name: string;
   kind: SymbolInfo["kind"];
   loc: SourceLocation;
-  /** 对外的导出名（**别名导出**时 ≠ name） */
   exportName?: string;
-  /** 导出说明符的**导出侧**位置（**别名导出**时给出） */
   exportLoc?: SourceLocation;
-  /**
-   * **跨文件**时 `loc` 实际所在的文件（BUG-104）。
-   *
-   * re-export 链（`export { Box } from "./lib.js"`）会跟到目标模块，返回的
-   * `loc` 属于**目标模块**；旧口径只回 loc 不回文件 ⇒ 调用方配对自己传进来的
-   * `resolvedPath`（barrel）⇒ F12 跳到 barrel 里却用 lib 的坐标（行号对不上）。
-   * 本地声明不设（= 调用方给的文件）。
-   */
   filePath?: string;
-  /** **跨文件**时 `exportLoc` 实际所在的文件（别名 re-export 的说明符位）。 */
   exportFile?: string;
 } | null {
   let ast: Node;
@@ -2701,94 +2672,49 @@ export function findExportDefinition(
   } catch {
     return null;
   }
-  for (const stmt of programBody(ast)) {
-    let decl: Node = stmt;
-    if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
-      decl = stmt.declaration;
-    } else if (stmt.type === "ExportDefaultDeclaration") {
-      decl = stmt.declaration;
-      // export default function foo / class foo / identifier
-      if (exportName === "default") {
-        if (decl?.type === "FunctionDeclaration" && decl.id) {
-          return { name: decl.id.name, kind: "function", loc: locFromNode(decl.id) };
-        }
-        if (decl?.type === "ClassDeclaration" && decl.id) {
-          return { name: decl.id.name, kind: "class", loc: locFromNode(decl.id) };
-        }
-        if (decl?.type === "Identifier") {
-          return { name: decl.name, kind: "variable", loc: locFromNode(decl) };
-        }
-        return null;
-      }
-      continue;
-    }
-    if (decl?.type === "FunctionDeclaration" && decl.id?.name === exportName) {
-      return { name: decl.id.name, kind: "function", loc: locFromNode(decl.id) };
-    }
-    if (decl?.type === "ClassDeclaration" && decl.id?.name === exportName) {
-      return { name: decl.id.name, kind: "class", loc: locFromNode(decl.id) };
-    }
-    if (decl?.type === "VariableDeclaration") {
-      for (const d of getDeclarations(decl)) {
-        const id = getDeclaratorId(d);
-        if (id && id.name === exportName) {
-          return { name: id.name, kind: "variable", loc: locFromNode(id) };
-        }
-      }
-    }
-    // export { a, b as c } —— 本地 export list 与 re-export 必须分流
-    if (stmt.type === "ExportNamedDeclaration" && !stmt.declaration && stmt.specifiers) {
-      for (const s of stmt.specifiers) {
-        if (s.type !== "ExportSpecifier") continue;
-        const exported = exportSpecifierExportedName(s);
-        if (exported === undefined || String(exported) !== exportName) continue;
-        const local = nameOrStringValue(s.local);
-        if (!local) continue;
-        if (stmt.source) {
-          // re-export：跟到目标模块的同名导出
-          if (!fromFile) continue;
-          const target = resolveRelativeModule(stmt.source.value as string, fromFile);
-          if (!target) continue;
-          const targetSrc = readSourceWith(sourceProvider, target);
-          if (targetSrc === undefined) continue;
-          const reexported = findExportDefinition(targetSrc, local, target, sourceProvider);
-          // BUG-104：**报告 loc 真正所在的文件**（re-export 可以多跳，终点不是
-          // 本文件）⇒ 调用方不再把目标模块的坐标贴到 barrel 上。子层未标注
-          // 文件的那两档（本地声明 / 本地别名导出）都属于 `target`。
-          if (reexported) {
-            return {
-              ...reexported,
-              filePath: reexported.filePath ?? target,
-              ...(reexported.exportLoc
-                ? { exportFile: reexported.exportFile ?? target }
-                : {}),
-            };
-          }
-          continue;
-        }
-        const table = buildSymbolTable(ast, "");
-        const def = table.definitions.get(local);
-        if (def) {
-          const exportedName = String(exported);
-          if (exportedName === local) {
-            // 同名直出（`export { a }`）⇒ 导出名 == 本地名 ⇒ 同一个身份
-            return { name: local, kind: def.kind, loc: def.loc };
-          }
-          // 别名导出（`export { a as b }`）⇒ **两个身份**：
-          //   loc = 本地绑定 `a` 的声明位（F12：跳到本地绑定）
-          //   exportLoc = 导出说明符的**导出侧** `b`（改名面：改的是导出名）
-          return {
-            name: local,
-            kind: def.kind,
-            loc: def.loc,
-            exportName: exportedName,
-            exportLoc: locFromNode(s.exported),
-          };
-        }
-      }
+  const index = buildSemanticIndex(ast as unknown as File);
+  const info = index.exportSlotInfos.get(exportName);
+  if (!info) return null;
+  if (info.kind === "reexport") {
+    if (!fromFile || !info.source || !info.imported || info.imported === "*") return null;
+    const target = resolveRelativeModule(info.source, fromFile);
+    if (!target) return null;
+    const targetSrc = readSourceWith(sourceProvider, target);
+    if (targetSrc === undefined) return null;
+    const reexported = findExportDefinition(targetSrc, info.imported, target, sourceProvider);
+    if (!reexported) return null;
+    return {
+      ...reexported,
+      filePath: reexported.filePath ?? target,
+      ...(reexported.exportLoc ? { exportFile: reexported.exportFile ?? target } : {}),
+    };
+  }
+  if (!info.local) return null;
+  let sym: IndexSymbol | undefined;
+  for (const candidate of index.symbols.values()) {
+    if (candidate.scopeUid === "m" && candidate.name === info.local) {
+      sym = candidate;
+      break;
     }
   }
-  return null;
+  if (!sym) return null;
+  const decl = index.declarations.get(sym.id);
+  if (!decl) return null;
+  const kind: SymbolInfo["kind"] =
+    sym.kind === "function"
+      ? "function"
+      : sym.kind === "class" || sym.kind === "classExpr"
+        ? "class"
+        : "variable";
+  const base = { name: sym.name, kind, loc: locFromNode(decl) };
+  if (info.slot !== info.local && info.exportedNode) {
+    return {
+      ...base,
+      exportName: info.slot,
+      exportLoc: locFromNode(info.exportedNode),
+    };
+  }
+  return base;
 }
 
 /**

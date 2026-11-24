@@ -127,8 +127,11 @@ export function scanClassSurface(
   decl: SurfaceNode,
   isResolvable: (name: string, valuePosition?: boolean) => boolean = () => false,
   source?: string,
+  memberNodes?: readonly SurfaceNode[],
 ): DtsClassMemberSurface {
-  const body = (decl.body as { body?: SurfaceNode[] } | undefined)?.body ?? [];
+  // Phase 3：类成员面由 `SemanticIndex.classBodyNodes` 提供（源码序）；
+  // 未传时回退源码节点，供 namespace 内嵌套类等未索引路径使用。
+  const body = memberNodes ?? (decl.body as { body?: SurfaceNode[] } | undefined)?.body ?? [];
   // BUG-168：源码声明的类型形参名（`class Box<T, U>`）——产物必须有类型形参槽，
   // 否则消费端 `new Box<string>(…)` 报 TS2558。
   // Babel 的形参节点是 `TSTypeParameter`（`name` 可能是标识符节点，也可能是

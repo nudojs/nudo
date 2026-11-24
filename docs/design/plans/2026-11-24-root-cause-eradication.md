@@ -5,9 +5,12 @@
 > 一个语义决策，禁止用「补分支 + 回归钉」代替结构修复。
 > **交付后**：按 `docs/README.md` 删除正文，证据留在测试 / changeset / git。
 >
-> **进度（2026-11-24）**：Phase 0 / 1 / 2 完成（2.5 的 degraded 上屏由既有
-> `export` 阻断诊断覆盖）；Phase 4.1 / 4.2 完成（矩阵进 CI + 孪生实现
-> hygiene 门）；Phase 3 待做。Phase 3 前置：
+> **进度（2026-11-25）**：Phase 0–4 全部完成。Phase 3.4 的收口口径：
+> 三处 canonical 面保留（`collectTopLevelFunctions` = 节点普查，
+> `dtsModuleSurface` = dts 渲染，`collectImportBindings` = 索引适配器）；
+> 它们的独立重复扫描已删除，导出槽 / import / 类成员 / namespace 成员均只读
+> `SemanticIndex`。`resolveEntryFace` 保留「索引 ∪ 旧名缺口」的安全网
+> （不是开关；索引缺口仍须补，但不改回落第二档结论）。
 > `SemanticIndex` 阶段 0 只带导出槽名，尚不含 dts 需要的值 / 类型 / 类成员节点。
 
 ## 0. 目标与非目标
@@ -150,6 +153,39 @@
 | BUG-480（部分） | 构造签名成员模型；`make` 通过 | `tmp/eradicate/b480.ts`：`make(c: Ctor) => string`；**残余**：`Both` 的 call + construct 双签名（Abs fn 只有一个签名槽）仍 `=> never`，需表示层扩展（另立 A 类） |
 
 ## 3.1 实施记录
+
+### 2026-11-24 · Phase 4.3 完成
+
+- 删除 `setSemanticIndexShadow` / `setSemanticIndexEntryFace` / `semanticIndexShadowActive` / `takeSemanticIndexShadow` / `recordSemanticIndexShadow` / `compareEntryFaces` / `semanticIndexEntryFaceSegment`。
+- `resolveEntryFace` 只读 `SemanticIndex.entries`（不再有旧面 fallback 分支）；check memo / service 文件级、函数级缓存键删除 `face=` 维度。
+- 删除 `recordServiceEntryFace` / `takeServiceEntryFace` 与两个迁移期影子测试；`entry-face-precision` 去掉开关调用。
+- 旧 `collectTopLevelFunctions` 仍服务 analyzer 的节点合成与 `addedNames` 区分（3.4 剩余）。
+
+### 2026-11-24 · Phase 3 切片 4
+
+- `SemanticIndex` 增 `classNodeIds` / `classBodyNodes` / `namespaceBodyNodes`。
+- `scanClassSurface` 的成员节点来源改为 `classBodyNodes`（源码序，含构造器 / 索引签名 / 静态块）；`namespaceMembersOf` 改为 `namespaceBodyNodes`，嵌套 namespace 同样按 start 查表。
+- dts 的模块导出槽（切片 2）、类成员、namespace 成员均只读索引事实；3.1 完成。
+- LSP 的 `collectImportBindings` 与 `findExportDefinition` 只读索引；`buildSymbolTable` 仍服务本地符号面，但 3.2 的“导入边 / 导出跳转”退出条件已满足。
+
+### 2026-11-24 · Phase 3 切片 3
+
+- `ExportSlotInfo` 增 `source` / `imported` / `exportedNode`，覆盖再导出链与本地别名。
+- LSP `findExportDefinition` 删除独立导出语句扫描：`exportSlotInfos` + `declarations` → 声明位置；再导出按 `source/imported` 递归。`lsp-symbols` / `lsp-check-contract-references` / `lsp-refactor` / `lsp-integration` 共 **123 passed**。
+- `collectImportBindings`（切片 1）与 `findExportDefinition` 都已只读索引；剩余 LSP 本地 `buildSymbolTable` / `documentSymbols` 尚未迁移。
+
+### 2026-11-24 · Phase 3 切片 2
+
+- `SemanticIndex` 新增 `exportSlotInfos`（slot / local / kind）：镜像 dts 的默认 / CJS / 再导出 / 类型 / namespace 归一；20 个代表源与 `dtsModuleSurface.exportBindings` 逐项相等。
+- `dtsModuleSurface` 删除 18 处 AST 侧 `bind(...)`：`exportBindings` 只从 `exportSlotInfos` 播种；声明 / 再导出文本 / 值 / 类 / namespace 渲染分支保留。
+- 新增索引契约测试；dts 五套 **164 passed**，矩阵 **24/0/0**。
+- 3.3 的 export 面因此只读索引导出槽（`export.ts` → `dtsModuleSurface`）。
+
+### 2026-11-24 · Phase 3 切片 1
+
+- `SemanticIndex` 新增 `imports`（本地名 → source / importedName / kind / 节点）与 `declarations`（SymbolId → 声明节点）。
+- LSP `collectImportBindings` 删除独立 `ImportDeclaration` 遍历，改读 `index.imports`；`lsp-symbols` / `lsp-check-contract-references` / `lsp-integration` 共 **101 passed**。
+- 仍余：`exportSlotInfos`（value/type/reexport/cjs/default + 归一 local）、`entryInfos`（node/stmt/noDeclaration/assignedName）；dts `bind` 扫描与 LSP `buildSymbolTable` 迁移。
 
 ### 2026-11-24 · Phase 3.1 前置实测
 

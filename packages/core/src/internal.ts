@@ -252,18 +252,9 @@ export {
   buildSemanticIndex,
   type SemanticIndex,
   type SymbolId,
+  type SymbolInfo as IndexSymbolInfo,
 } from "./algebra/scan/semantic-index.ts";
-export {
-  compareEntryFaces,
-  recordSemanticIndexShadow,
-  resolveEntryFace,
-  semanticIndexEntryFaceSegment,
-  semanticIndexShadowActive,
-  setSemanticIndexEntryFace,
-  setSemanticIndexShadow,
-  takeSemanticIndexShadow,
-  type EntryFaceDiff,
-} from "./algebra/scan/entry-face-shadow.ts";
+export { resolveEntryFace } from "./algebra/scan/entry-face-shadow.ts";
 // ADR 0001 阶段 1 切片 4.1：Evidence 只读面 + 发布门影子双读。
 // 仍经 internal 通道；`.` 产品面不泄漏（§10 决议 3）。
 export {

@@ -7,10 +7,8 @@ import traverse from "@babel/traverse";
 // ADR 0001 阶段 1 · 切片 2：service 普查面只读消费 core 的绑定索引。
 // 方向 service → core/internal 已允许（kernel-merge.md「绑定索引层」）。
 import {
-  buildSemanticIndex,
   literalConstValuesOf,
   memberKeyNameOf,
-  semanticIndexShadowActive,
 } from "@nudojs/core/internal";
 import {
   type Abs,
@@ -635,54 +633,6 @@ export function collectTopLevelFunctions(
     collectClassMethods(cname, hit.node, hit.stmt);
   }
   return results;
-}
-
-/**
- * ADR 0001 阶段 1 · 切片 2：service 顶层函数普查面的**只读索引对照**。
- *
- * `collectTopLevelFunctions` 目前仍是「名称 + 节点」孪生扫描器（节点用于
- * 形参 / 定位 / noDeclaration），索引只有名字，**不能替换它**；本函数只把
- * 两个面的名字差做成可观测快照，为后续删孪生实现提供证据。
- *
- * 只读快照开关默认关闭（`shadowEnabled`，与 `check` 的索引面开关**分离**：
- * 切片 3 起索引面默认开启，若共用会让每次 `analyzeFile` 都多建一次索引）。
- * 关闭时一次布尔判断返回，不构建索引、不复制名字数组 ⇒ CLI 热路径零开销、
- * 零行为变更。分歧按 §10 决议 4 如实记录，不设白名单、不改普查结果。
- */
-export interface ServiceEntryFaceSnapshot {
-  /** `SemanticIndex.entries`（core 侧唯一生产者）。 */
-  readonly indexed: readonly string[];
-  /** 索引有、service 普查没有的入口。 */
-  readonly added: readonly string[];
-  /** service 普查有、索引没有的入口（索引缺口）。 */
-  readonly missing: readonly string[];
-}
-
-let lastServiceEntryFace: ServiceEntryFaceSnapshot | undefined;
-
-/** 消费式读取（取后清空），便于一次分析一次断言。 */
-export function takeServiceEntryFace(): ServiceEntryFaceSnapshot | undefined {
-  const snapshot = lastServiceEntryFace;
-  lastServiceEntryFace = undefined;
-  return snapshot;
-}
-
-/** `analyzeFileUncached` 普查拼装处的唯一接线点。 */
-export function recordServiceEntryFace(
-  ast: Node,
-  census: readonly { readonly name: string }[],
-): void {
-  if (!semanticIndexShadowActive()) return;
-  if (ast.type !== "File") return;
-  const indexed = buildSemanticIndex(ast as unknown as File).entries;
-  const names = census.map((c) => c.name);
-  const oldSet = new Set(names);
-  const indexedSet = new Set(indexed);
-  lastServiceEntryFace = {
-    indexed,
-    added: indexed.filter((n) => !oldSet.has(n)),
-    missing: names.filter((n) => !indexedSet.has(n)),
-  };
 }
 
 /** The function value of the file's single `module.exports = <function>`

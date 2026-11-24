@@ -12,7 +12,7 @@
 
 import { isBuiltin } from "node:module";
 import { parseSource as parse } from "../parse-source.ts";
-import { recordSemanticIndexShadow, resolveEntryFace } from "../scan/entry-face-shadow.ts";
+import { resolveEntryFace } from "../scan/entry-face-shadow.ts";
 import { identBoundaryRegex, stripStringsKeepComments } from "../format/code-text.ts";
 import { extractFileEnvNames } from "../directive-scan.ts";
 import {
@@ -326,10 +326,7 @@ function checkSourceInScope(
     ...listTopFunctions(source, file),
     ...listClassEntryNames(source, file),
   ];
-  // ADR 0001 阶段 1：入口面影子双读（切片 1，只记录分歧），再经索引普查面
-  // （切片 2 引入、切片 3 起默认开启；`setSemanticIndexEntryFace(false)` 可
-  // 一键回退旧面）。索引面状态已进 checkMemoKey，两档结论互不回放。
-  recordSemanticIndexShadow(file, oldNames);
+  // ADR 0001 阶段 3：索引是唯一入口面；旧普查名只补索引缺口。
   const names = resolveEntryFace(file, oldNames);
   // D1：只有「索引相对旧普查面**新增**」的名字才是新的导出槽形态。
   // 整个 names 含顶层非导出函数声明，全量并入会让内部函数的 any 操作被

@@ -10,11 +10,10 @@
  *
  * 断言同时覆盖「索引面」与「开启开关后的 check 门禁面」，防止只修一半。
  */
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { parseSource } from "../parse-source.ts";
 import { checkSource, pTrue } from "../index.ts";
 import { buildSemanticIndex } from "../scan/semantic-index.ts";
-import { setSemanticIndexEntryFace } from "../scan/entry-face-shadow.ts";
 
 const GETTER = `module.exports = {
   get f() { return 1; },
@@ -49,9 +48,6 @@ const codesOf = (src: string, name: string): string[] =>
 const entriesOf = (src: string): readonly string[] =>
   buildSemanticIndex(parseSource(src)).entries;
 
-/** 交付默认态：索引面开启（afterEach 恢复，避免用例间串开关）。 */
-afterEach(() => setSemanticIndexEntryFace(true));
-
 describe("ADR 0001 阶段 1 · 切片 3 entries 精度", () => {
   it("CJS getter / setter 不进索引入口表，普通方法仍进（BUG-996）", () => {
     expect(entriesOf(GETTER)).toEqual([]);
@@ -59,8 +55,7 @@ describe("ADR 0001 阶段 1 · 切片 3 entries 精度", () => {
     expect(entriesOf(PLAIN_METHOD)).toEqual(["f"]);
   });
 
-  it("开启切换后 getter / setter 不造假诊断（BUG-996 check 面）", () => {
-    setSemanticIndexEntryFace(true);
+  it("getter / setter 不造假诊断（BUG-996 check 面）", () => {
     for (const [label, src] of [["getter", GETTER], ["setter", SETTER]] as const) {
       const codes = codesOf(src, label);
       expect(codes).not.toContain("nudo:opaque-result");
@@ -74,8 +69,7 @@ describe("ADR 0001 阶段 1 · 切片 3 entries 精度", () => {
     expect(entriesOf(LOCAL_GETTER)).toEqual(["f"]);
   });
 
-  it("开启切换后嵌套声明不引发假 opaque-result（BUG-1149 / 1159 check 面）", () => {
-    setSemanticIndexEntryFace(true);
+  it("嵌套声明不引发假 opaque-result（BUG-1149 / 1159 check 面）", () => {
     for (const [label, src] of [
       ["nested-fn", NESTED_FN],
       ["nested-arrow", NESTED_ARROW],

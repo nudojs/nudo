@@ -124,6 +124,66 @@ describe("SemanticIndex · 阶段 0 骨架", () => {
     expect(indexOf(src).entries).toEqual(["f"]);
   });
 
+  it("imports / declarations 暴露声明事实（Phase 3 LSP 单点）", () => {
+    const idx = indexOf(`import def, { a as b } from "./m.js";
+import * as ns from "./n.js";
+export function f() { return b; }`);
+    expect(idx.imports.get("b")).toMatchObject({
+      source: "./m.js",
+      importedName: "a",
+      kind: "named",
+    });
+    expect(idx.imports.get("def")).toMatchObject({
+      importedName: "default",
+      kind: "default",
+    });
+    expect(idx.imports.get("ns")).toMatchObject({
+      importedName: "*",
+      kind: "namespace",
+    });
+    const fId = [...idx.symbols.values()].find((s) => s.name === "f")?.id;
+    expect(fId).toBeDefined();
+    expect(idx.declarations.get(fId!)).toBeDefined();
+  });
+
+  it("exportSlotInfos 归一默认 / CJS / 再导出（dts 单点）", () => {
+    const idx = indexOf(`export default function named() {}
+export { x as y } from "./x.js";
+exports.foo = function() {};
+module.exports = { bar() {} };
+export interface I { x: number }`);
+    const info = (slot: string) => {
+      const e = idx.exportSlotInfos.get(slot);
+      return e ? { local: e.local, kind: e.kind } : undefined;
+    };
+    expect(info("default")).toEqual({ local: "named", kind: "default" });
+    expect(info("y")).toEqual({ local: "", kind: "reexport" });
+    expect(info("foo")).toEqual({ local: "foo", kind: "cjs" });
+    expect(info("bar")).toEqual({ local: "bar", kind: "cjs" });
+    expect(info("I")).toBeUndefined();
+  });
+
+  it("memberNodes 给出类成员声明节点（dts 类面迁移前置）", () => {
+    const idx = indexOf(`export class C { x = 1; m() {} static s() {} get g() { return 1; } }`);
+    const c = [...idx.symbols.values()].find((s) => s.name === "C");
+    expect(c).toBeDefined();
+    const nodes = idx.memberNodes.get(c!.id);
+    expect(nodes).toBeDefined();
+    expect([...nodes!.keys()].sort()).toEqual(["g", "m", "s", "x"]);
+  });
+
+  it("classBodyNodes / namespaceBodyNodes 提供 dts 面成员节点", () => {
+    const idx = indexOf(`export class C { x = 1; m() {} }
+export namespace NS { export const q = 1; }`);
+    const c = [...idx.symbols.values()].find((s) => s.name === "C");
+    expect(c).toBeDefined();
+    // 声明节点是 class id，不是类体；按 classBodyNodes 的 owner 断言更直接。
+    const classBodies = [...idx.classBodyNodes.values()];
+    expect(classBodies.some((nodes) => nodes.length === 2)).toBe(true);
+    const nsBodies = [...idx.namespaceBodyNodes.values()];
+    expect(nsBodies.some((nodes) => nodes.length === 1)).toBe(true);
+  });
+
   it("稳定键：跨 parse 重建产生同一组 SymbolId（决议 1）", () => {
     const src = `export const x = 1; export function f(y) { return y + x; }`;
     resetParseSourceCache();

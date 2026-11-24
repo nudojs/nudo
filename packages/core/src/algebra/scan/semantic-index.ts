@@ -17,7 +17,7 @@
  * - 解构模式收集与 `scope-collect.ts::collectPatternNames` 同形实现，未直接
  *   import，避免 algebra/scan → exec/transpile 的反向依赖与该模块的加载副作用。
  */
-import type { File } from "@babel/types";
+import type { File, Node } from "@babel/types";
 
 export type SymbolId = string & { readonly __brand: "SymbolId" };
 export type NodeId = string & { readonly __brand: "NodeId" };
@@ -43,6 +43,35 @@ export interface MemberTable {
   readonly accessors: readonly string[];
 }
 
+/** 一条 ESM import 绑定的声明事实（按本地名索引）。 */
+export interface ImportBindingInfo {
+  readonly local: string;
+  readonly source: string;
+  readonly importedName: string;
+  readonly kind: "named" | "default" | "namespace";
+  readonly localNode: Node;
+  readonly importedNode: Node;
+}
+
+export type ExportSlotKind =
+  | "value" | "type" | "reexport" | "cjs" | "default" | "namespace";
+
+/**
+ * 导出槽的声明事实（dts / export / LSP 共用）。
+ * `local` 是声明侧名字；再导出与匿名默认导出按 dts 面口径置空。
+ */
+export interface ExportSlotInfo {
+  readonly slot: ExportSlot;
+  readonly local: string;
+  readonly kind: ExportSlotKind;
+  /** 再导出目标模块说明符（仅 kind = "reexport"）。 */
+  readonly source?: string;
+  /** 目标模块里的导入名（仅 kind = "reexport"；`*` 表示命名空间）。 */
+  readonly imported?: string;
+  /** 本地导出别名的导出侧说明符节点（`export { a as b }` 的 b）。 */
+  readonly exportedNode?: Node;
+}
+
 export interface CallSiteInfo {
   readonly calleeName: string | undefined;
   readonly memberKey: string | undefined;
@@ -66,8 +95,22 @@ export interface SemanticIndex {
   /** 便利查询：源码 offset → 绑定身份（与 refs 同源，不是第二份事实）。 */
   readonly refByOffset: ReadonlyMap<number, SymbolId>;
   readonly exportSlots: ReadonlyMap<ExportSlot, SymbolId>;
+  /** 归一后的导出槽表（含 CJS / 默认 / 再导出；dts 面的唯一来源）。 */
+  readonly exportSlotInfos: ReadonlyMap<ExportSlot, ExportSlotInfo>;
+  /** 按本地名索引的 ESM import 声明事实（source / imported / 节点）。 */
+  readonly imports: ReadonlyMap<string, ImportBindingInfo>;
+  /** 每个符号 id 的声明节点（synthetic 导出槽取对应说明符节点）。 */
+  readonly declarations: ReadonlyMap<SymbolId, Node>;
   readonly entries: readonly EntryId[];
   readonly members: ReadonlyMap<SymbolId, MemberTable>;
+  /** 类成员名 → 声明节点（dts 类面迁移用的只读成员事实）。 */
+  readonly memberNodes: ReadonlyMap<SymbolId, ReadonlyMap<string, Node>>;
+  /** 类声明节点 start → owner SymbolId。 */
+  readonly classNodeIds: ReadonlyMap<number, SymbolId>;
+  /** owner SymbolId → 类体成员节点（源码序，含构造器 / 索引签名 / 静态块）。 */
+  readonly classBodyNodes: ReadonlyMap<SymbolId, readonly Node[]>;
+  /** namespace 声明 start → 体语句节点（源码序，dts namespace 面）。 */
+  readonly namespaceBodyNodes: ReadonlyMap<number, readonly Node[]>;
   readonly spans: readonly LexicalSpan[];
   readonly calls: readonly CallSiteInfo[];
 }
@@ -275,7 +318,14 @@ function buildIndex(file: File): SemanticIndex {
   const refs = new Map<NodeId, SymbolId>();
   const refByOffset = new Map<number, SymbolId>();
   const exportSlots = new Map<ExportSlot, SymbolId>();
+  const exportSlotInfos = new Map<ExportSlot, ExportSlotInfo>();
+  const imports = new Map<string, ImportBindingInfo>();
+  const declarations = new Map<SymbolId, Node>();
   const members = new Map<SymbolId, MemberTable>();
+  const memberNodes = new Map<SymbolId, ReadonlyMap<string, Node>>();
+  const classNodeIds = new Map<number, SymbolId>();
+  const classBodyNodes = new Map<SymbolId, readonly Node[]>();
+  const namespaceBodyNodes = new Map<number, readonly Node[]>();
   const spans: LexicalSpan[] = [];
   const calls: CallSiteInfo[] = [];
   const entries: EntryId[] = [];
@@ -303,6 +353,7 @@ function buildIndex(file: File): SemanticIndex {
     if (!symbols.has(id)) {
       symbols.set(id, { id, name, kind, scopeUid: frame.uid, declarationStart: startOf(node) });
     }
+    declarations.set(id, node as unknown as Node);
     if (!frame.bindings.has(name)) frame.bindings.set(name, id);
     return id;
   }
@@ -312,6 +363,7 @@ function buildIndex(file: File): SemanticIndex {
     if (!symbols.has(id)) {
       symbols.set(id, { id, name, kind, scopeUid: frame.uid, declarationStart: startOf(node) });
     }
+    declarations.set(id, node as unknown as Node);
     return id;
   }
 
@@ -354,10 +406,42 @@ function buildIndex(file: File): SemanticIndex {
           if (nm) declare(frame, nm, n.id, n.type === "FunctionDeclaration" ? "function" : "class");
         }
       } else if (n.type === "ImportDeclaration" && Array.isArray(n.specifiers)) {
+        const sourceNode = isNode(n.source) ? n.source : undefined;
+        const source = typeof sourceNode?.value === "string" ? sourceNode.value : "";
         for (const s of n.specifiers) {
           if (!isNode(s) || !isNode(s.local)) continue;
           const nm = nameOf(s.local);
-          if (nm) declare(frame, nm, s.local, "import");
+          if (!nm) continue;
+          declare(frame, nm, s.local, "import");
+          if (s.type === "ImportSpecifier") {
+            const imported = isNode(s.imported) ? nameOf(s.imported) ?? nm : nm;
+            imports.set(nm, {
+              local: nm,
+              source,
+              importedName: imported,
+              kind: "named",
+              localNode: s.local as unknown as Node,
+              importedNode: (isNode(s.imported) ? s.imported : s.local) as unknown as Node,
+            });
+          } else if (s.type === "ImportDefaultSpecifier") {
+            imports.set(nm, {
+              local: nm,
+              source,
+              importedName: "default",
+              kind: "default",
+              localNode: s.local as unknown as Node,
+              importedNode: s.local as unknown as Node,
+            });
+          } else if (s.type === "ImportNamespaceSpecifier") {
+            imports.set(nm, {
+              local: nm,
+              source,
+              importedName: "*",
+              kind: "namespace",
+              localNode: s.local as unknown as Node,
+              importedNode: s.local as unknown as Node,
+            });
+          }
         }
       } else if (n.type === "ExportNamedDeclaration" && isNode(n.declaration)) {
         collectDeclarations([n.declaration], frame);
@@ -371,13 +455,14 @@ function buildIndex(file: File): SemanticIndex {
     }
   }
 
-  function memberTableOf(decl: AnyNode): MemberTable & { keys: string[] } {
+  function memberTableOf(decl: AnyNode): MemberTable & { keys: string[]; nodes: Map<string, Node> } {
     const table = {
       ownFields: [] as string[],
       protoMethods: [] as string[],
       staticMembers: [] as string[],
       accessors: [] as string[],
       keys: [] as string[],
+      nodes: new Map<string, Node>(),
     };
     const body = isNode(decl.body) ? decl.body : undefined;
     const raw = body?.body;
@@ -389,6 +474,7 @@ function buildIndex(file: File): SemanticIndex {
       const isStatic = m.static === true;
       const kind = typeof m.kind === "string" ? m.kind : "method";
       if (kind === "constructor") continue;
+      table.nodes.set(keyName, m as unknown as Node);
       if (m.type === "ClassProperty" || m.type === "PropertyDefinition" || m.type === "ClassAccessorProperty") {
         (isStatic ? table.staticMembers : table.ownFields).push(keyName);
       } else if (kind === "get" || kind === "set") {
@@ -418,6 +504,12 @@ function buildIndex(file: File): SemanticIndex {
       ownFields: table.ownFields, protoMethods: table.protoMethods,
       staticMembers: table.staticMembers, accessors: table.accessors,
     });
+    memberNodes.set(ownerId, table.nodes);
+    classNodeIds.set(startOf(decl), ownerId);
+    const body = isNode(decl.body) ? decl.body : undefined;
+    if (body && Array.isArray(body.body)) {
+      classBodyNodes.set(ownerId, body.body.filter(isNode) as unknown as Node[]);
+    }
     classDefs.push({ cname, symbolId: ownerId, keys: table.keys, direct });
   }
 
@@ -574,6 +666,13 @@ function buildIndex(file: File): SemanticIndex {
     // / CJS 赋值不得成为公共入口：否则 check 解析不到该名字 ⇒ 假
     // `nudo:opaque-result`（BUG-1149 / 1159 实测：嵌套 `function g(){}`）。
     const topLevel = frame.uid === root.uid;
+
+    if (type === "TSModuleDeclaration") {
+      const body = isNode(node.body) ? node.body : undefined;
+      if (body && Array.isArray(body.body)) {
+        namespaceBodyNodes.set(start, body.body.filter(isNode) as unknown as Node[]);
+      }
+    }
 
     if (type === "Identifier") {
       const isProperty = parentKey === "property" &&
@@ -808,7 +907,176 @@ function buildIndex(file: File): SemanticIndex {
     for (const k of def.keys) addEntry(k);
   }
 
+  function collectExportSlotInfos(): void {
+    const add = (
+      slot: string | undefined,
+      local: string,
+      kind: ExportSlotKind,
+      reexport?: { source: string; imported: string },
+      exportedNode?: AnyNode,
+    ): void => {
+      if (!slot || exportSlotInfos.has(slot)) return;
+      exportSlotInfos.set(slot, {
+        slot, local, kind,
+        ...(reexport ? { source: reexport.source, imported: reexport.imported } : {}),
+        ...(exportedNode ? { exportedNode: exportedNode as unknown as Node } : {}),
+      });
+    };
+    const sourceText = (n: AnyNode | undefined): string | undefined =>
+      n && typeof n.value === "string" ? n.value : undefined;
+    const textName = (n: AnyNode | undefined): string | undefined => {
+      if (!n) return undefined;
+      if (typeof n.name === "string") return n.name;
+      if (typeof n.value === "string" || typeof n.value === "number") return String(n.value);
+      return undefined;
+    };
+    const patternNames = (id: AnyNode | undefined): string[] => {
+      if (!id) return [];
+      const names: BindingName[] = [];
+      bindingNamesOf(id, names);
+      return names.map((b) => b.name);
+    };
+    const cjsKey = (left: AnyNode | undefined): string | undefined => {
+      const slot = cjsSlotOf(left);
+      if (!slot || slot === "module.exports") return undefined;
+      return slot.startsWith("exports.") ? slot.slice("exports.".length) : undefined;
+    };
+    const body = (rootNode as { program?: { body?: AnyNode[] } }).program?.body ?? [];
+    for (const stmt of body) {
+      if (!isNode(stmt)) continue;
+      if (stmt.type === "ExportAllDeclaration") {
+        const ns = textName(isNode(stmt.exported) ? stmt.exported : undefined);
+        const source = sourceText(isNode(stmt.source) ? stmt.source : undefined);
+        add(ns, "", "reexport", source ? { source, imported: "*" } : undefined);
+        continue;
+      }
+      if (stmt.type === "ExportNamedDeclaration") {
+        const from = isNode(stmt.source) ? stmt.source : undefined;
+        const specs = Array.isArray(stmt.specifiers) ? stmt.specifiers : [];
+        if (from) {
+          const source = sourceText(from);
+          for (const spec of specs) {
+            if (!isNode(spec)) continue;
+            if (spec.type === "ExportNamespaceSpecifier") {
+              add(
+                textName(isNode(spec.exported) ? spec.exported : undefined),
+                "",
+                "reexport",
+                source ? { source, imported: "*" } : undefined,
+              );
+            } else if (spec.type === "ExportSpecifier") {
+              const imported = textName(isNode(spec.local) ? spec.local : undefined);
+              add(
+                textName(isNode(spec.exported) ? spec.exported : undefined),
+                "",
+                "reexport",
+                source && imported ? { source, imported } : undefined,
+              );
+            }
+          }
+          continue;
+        }
+        const decl = isNode(stmt.declaration) ? stmt.declaration : undefined;
+        if (decl) {
+          if (
+            decl.type === "FunctionDeclaration" ||
+            decl.type === "ClassDeclaration" ||
+            decl.type === "TSEnumDeclaration" ||
+            decl.type === "TSDeclareFunction"
+          ) {
+            const id = textName(isNode(decl.id) ? decl.id : undefined);
+            if (id) add(id, id, "value");
+          } else if (decl.type === "VariableDeclaration" && Array.isArray(decl.declarations)) {
+            for (const d of decl.declarations) {
+              if (!isNode(d)) continue;
+              for (const n of patternNames(isNode(d.id) ? d.id : undefined)) add(n, n, "value");
+            }
+          } else if (decl.type === "TSModuleDeclaration") {
+            const id = textName(isNode(decl.id) ? decl.id : undefined);
+            if (id) add(id, id, "namespace");
+          }
+          continue;
+        }
+        for (const spec of specs) {
+          if (!isNode(spec)) continue;
+          if (spec.type === "ExportNamespaceSpecifier") {
+            add(textName(isNode(spec.exported) ? spec.exported : undefined), "", "namespace");
+          } else if (spec.type === "ExportSpecifier") {
+            const local = textName(isNode(spec.local) ? spec.local : undefined);
+            const exported = textName(isNode(spec.exported) ? spec.exported : undefined);
+            if (exported && local) {
+              const typeOnly =
+                stmt.exportKind === "type" || (spec as { exportKind?: string }).exportKind === "type";
+              add(
+                exported,
+                local,
+                typeOnly ? "type" : "value",
+                undefined,
+                isNode(spec.exported) ? spec.exported : undefined,
+              );
+            }
+          }
+        }
+        continue;
+      }
+      if (stmt.type === "ExportDefaultDeclaration") {
+        const decl = isNode(stmt.declaration) ? stmt.declaration : undefined;
+        if (!decl) {
+          add("default", "", "default");
+          continue;
+        }
+        if (decl.type === "FunctionDeclaration" || decl.type === "ClassDeclaration") {
+          add("default", textName(isNode(decl.id) ? decl.id : undefined) ?? "", "default");
+        } else if (
+          decl.type === "ArrowFunctionExpression" ||
+          decl.type === "FunctionExpression"
+        ) {
+          add("default", "", "default");
+        } else if (decl.type === "Identifier") {
+          add("default", textName(decl) ?? "", "default");
+        } else if (
+          decl.type !== "TSInterfaceDeclaration" &&
+          decl.type !== "TSTypeAliasDeclaration"
+        ) {
+          add("default", "_default", "default");
+        }
+        continue;
+      }
+      if (stmt.type === "ExpressionStatement") {
+        const expr = isNode(stmt.expression) ? stmt.expression : undefined;
+        if (!expr || expr.type !== "AssignmentExpression" || expr.operator !== "=") continue;
+        const left = isNode(expr.left) ? expr.left : undefined;
+        const right = isNode(expr.right) ? expr.right : undefined;
+        if (!left || !right) continue;
+        const prop = cjsKey(left);
+        if (prop && prop !== "default") {
+          add(prop, prop, "cjs");
+          continue;
+        }
+        if (!isModuleExportsNode(left)) continue;
+        if (right.type === "ObjectExpression") {
+          const props = Array.isArray(right.properties) ? right.properties : [];
+          for (const p of props) {
+            if (!isNode(p)) continue;
+            const key = staticKeyOf(p.key, p.computed === true);
+            if (!key || key === "default") continue;
+            add(key, key, "cjs");
+          }
+          continue;
+        }
+        if (right.type === "Identifier") {
+          const n = textName(right);
+          if (n) add(n, n, "cjs");
+          continue;
+        }
+        add("default", "", "cjs");
+      }
+    }
+  }
+
+  collectExportSlotInfos();
+
   return {
-    symbols, refs, refByOffset, exportSlots, entries, members, spans, calls,
+    symbols, refs, refByOffset, exportSlots, exportSlotInfos, imports, declarations, entries, members, memberNodes, classNodeIds, classBodyNodes, namespaceBodyNodes, spans, calls,
   };
 }
