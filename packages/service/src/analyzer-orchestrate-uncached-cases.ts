@@ -81,6 +81,7 @@ import { defaultLoadModule } from "./load-module.ts";
 import {
   buildEntryDomain,
   entryThisReceiverOf,
+  namedTypeNodesForSource,
   namedTypeTextsForSource,
   typeParamEnvForFunction,
   valueTypeTextsForSource,
@@ -100,7 +101,7 @@ import {
 } from "./analyzer-abs-eval.ts";
 import { COLLAPSE_LITERAL_THRESHOLD, dedupeCallRecords } from "./analyzer-diagnose.ts";
 import { extractFormals, extractParamNames, resolveFunctionNode } from "./analyzer-ast.ts";
-import { importedTypeTextsForFile } from "./ts-annotation.ts";
+import { importedTypeTextsForFile, inlineImportTypeTextsForFile } from "./ts-annotation.ts";
 import type {
   AnalyzeLoadModule,
   CaseHint,
@@ -1351,6 +1352,8 @@ function entryArgAbsListOf(
       ...importedTypeTextsForFile(source, filePath),
       ...namedTypeTextsForSource(source),
     ]),
+    namedTypeNodes: namedTypeNodesForSource(source),
+    importTypes: inlineImportTypeTextsForFile(source, filePath),
     valueTypes: valueTypeTextsForSource(source),
   };
   return buildEntryDomain(fnName, source, formals, {

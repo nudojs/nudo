@@ -237,6 +237,7 @@ export interface DtsClassAccessorSurface {
   kind: "get" | "set";
   type: string;
   isStatic?: boolean;
+  isAbstract?: boolean;
   accessibility?: "private" | "protected" | "public";
   symbolKey?: boolean;
 }

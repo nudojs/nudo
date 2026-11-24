@@ -81,6 +81,22 @@ export function userSymbolMemberKeys(init: SurfaceNode | undefined): string[] {
 }
 
 /**
+ * 字面量初始化式 → TS 字面量类型文本（单点闸门）。
+ *
+ * 顶层 `const` 走 Abs 的 `literalConst`；default / namespace 成员没有分析面
+ * Abs（或没有对应绑定），必须用同一份文本闸门，否则 `export default 42`
+ * 发 `number`、`namespace N { export const v = 1 }` 发 `number`（报告 415/443）。
+ */
+export function literalTypeTextOfInit(init: SurfaceNode | undefined): string | undefined {
+  if (!init) return undefined;
+  if (init.type === "StringLiteral") return JSON.stringify(init.value);
+  if (init.type === "NumericLiteral") return String(init.value);
+  if (init.type === "BooleanLiteral") return init.value ? "true" : "false";
+  if (init.type === "BigIntLiteral") return `${String(init.value)}n`;
+  return undefined;
+}
+
+/**
  * 初始化器形状 → TS 类型串（Bug 62 的 CJS 值导出 / default 表达式兜底）。
  * 比 `classFieldTypeOfInit` 完整：对象逐成员投影、数组按元素 join ⇒ 消费端
  * `import { obj, arr }` 拿到的不是 `object` / `unknown[]` 这种会 TS2322 的

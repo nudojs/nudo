@@ -50,6 +50,10 @@ docs/examples/**/*.d.ts
 
 # generated reports (coverage/env/builtins/perf) — build artifacts, not sources
 /docs/reports/
+# 例外：face-matrix 基线是迁移棘轮（源文件，必须进版本库；其余报告仍忽略）
+!/docs/reports/
+/docs/reports/*
+!/docs/reports/face-matrix-baseline.json
 
 .playwright-cli/
 **/.playwright-cli/

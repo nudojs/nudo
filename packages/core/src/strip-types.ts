@@ -1305,13 +1305,17 @@ function tsTypeText(
  * 不可枚举 ⇒ `Object.keys(node)` / `for…in` / 结构等价断言都看不见它
  * （AST 形状对既有消费方**零变化**），但 `node.nudoTypeText` 直接访问可得。
  */
-function setTypeText(node: Node & Record<string, unknown>, key: string, text: string): void {
+function setSidecar(node: Node & Record<string, unknown>, key: string, value: unknown): void {
   Object.defineProperty(node, key, {
-    value: text,
+    value,
     enumerable: false,
     configurable: true,
     writable: true,
   });
+}
+
+function setTypeText(node: Node & Record<string, unknown>, key: string, text: string): void {
+  setSidecar(node, key, text);
 }
 
 /** 求值器不读的类型字段：原地 delete（类型文本留旁路，见文件头） */
@@ -1346,14 +1350,10 @@ function deleteTypeSyntaxFields(
       if (texts.length > 0) {
         // 与 nudoTypeText 同口径：旁路字段必须**不可枚举**（AST 深比较 /
         // Babel 打印 / 消费方遍历不得看到引擎私有字段）。
-        Object.defineProperty(node, "nudoTypeArguments", {
-          value: texts,
-          enumerable: false,
-          configurable: true,
-          writable: true,
-        });
+        setSidecar(node, "nudoTypeArguments", texts);
       }
     }
+    if (Array.isArray(params)) setSidecar(node, "nudoTypeArgumentNodes", params);
     delete node.typeArguments;
   }
   const ta = node.typeAnnotation as
@@ -1363,6 +1363,9 @@ function deleteTypeSyntaxFields(
     // Bug 479：类型注解文本留旁路（形参/变量/类成员的声明类型）
     const text = tsTypeText(source, ta.typeAnnotation);
     if (text !== undefined) setTypeText(node, "nudoTypeText", text);
+    // 结构面：注解**节点**同时留旁路，供 node→Abs 单点解析直接消费
+    // （不经源码文本二次解析）。节点只随当前 AST 生存，不进缓存 / 不序列化。
+    if (ta.typeAnnotation) setSidecar(node, "nudoTypeNode", ta.typeAnnotation);
     delete node.typeAnnotation;
   }
   const rt = node.returnType as
@@ -1380,6 +1383,8 @@ function deleteTypeSyntaxFields(
         ? tsTypeText(source, rt.typeAnnotation)
         : tsTypeText(source, rt);
     if (text !== undefined) setTypeText(node, "nudoReturnTypeText", text);
+    const annNode = rt.type === "TSTypeAnnotation" ? rt.typeAnnotation : rt;
+    if (annNode) setSidecar(node, "nudoReturnTypeNode", annNode);
     delete node.returnType;
   }
   // `a?: T` 的可选标记。只在这些模式节点上删：OptionalMemberExpression 等

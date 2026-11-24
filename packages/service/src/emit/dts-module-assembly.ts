@@ -478,7 +478,17 @@ export function projectModuleDtsInner(
   // ── 再导出面 ──
   if (surface) for (const r of surface.reexports) lines.push(r);
 
-  return { lines: [...importLines, ...ledger, ...lines], params };
+  const body = [...importLines, ...ledger, ...lines];
+  // BUG-489：`.d.ts` 若没有任何模块标记，非导出的顶层 `declare class` /
+  // `interface` / `declare namespace` 会被消费方当成模块公开导出（TS 的
+  // ambient 声明在非模块脚本里是全局 / 在无 `export {}` 的边界下被 `import`
+  // 解析到）。补一个显式空导出；`export =` 形态不能与其它导出共存，跳过。
+  const hasExportEquals = body.some((l) => /^\s*export\s*=/.test(l));
+  const hasModuleMarker = body.some((l) => /^\s*export\s*\{\s*\}\s*;?\s*$/.test(l));
+  return {
+    lines: hasExportEquals || hasModuleMarker ? body : [...body, "export {};"],
+    params,
+  };
 }
 
 /**

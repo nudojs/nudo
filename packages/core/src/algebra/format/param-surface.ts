@@ -28,6 +28,8 @@ export type FormalParam =
       name: string;
       index: number;
       tsType?: string;
+      /** 注解节点旁路（结构面；只随当前 AST 生存，不进产物 / 缓存） */
+      tsTypeNode?: unknown;
       /** 该形参位可省略（Bug 399）：true = 不计入必选元数 */
       optional?: boolean;
     }
@@ -36,6 +38,8 @@ export type FormalParam =
       name: string;
       index: number;
       tsType?: string;
+      /** 注解节点旁路（结构面；只随当前 AST 生存，不进产物 / 缓存） */
+      tsTypeNode?: unknown;
       /** 默认形参恒可省略（Bug 399） */
       optional?: boolean;
     }
@@ -45,6 +49,8 @@ export type FormalParam =
       display: string;
       index: number;
       tsType?: string;
+      /** 注解节点旁路（结构面；只随当前 AST 生存，不进产物 / 缓存） */
+      tsTypeNode?: unknown;
       /** rest 形参恒可省略（Bug 399） */
       optional?: boolean;
       /**
@@ -93,6 +99,8 @@ export type FormalParam =
       index: number;
       /** TS 声明类型文本（.ts 源；缺省 = 无注解） */
       tsType?: string;
+      /** 注解节点旁路（结构面；只随当前 AST 生存，不进产物 / 缓存） */
+      tsTypeNode?: unknown;
       /** 带默认值的解构形参（`{ a } = {}`）可省略（Bug 399） */
       optional?: boolean;
     };
@@ -105,6 +113,8 @@ type AstParam = {
   argument?: AstParam;
   /** Bug 479：剥除 pass 留下的类型注解文本旁路 */
   nudoTypeText?: string;
+  /** 类型注解节点旁路（结构面；node→Abs 单点解析直接消费） */
+  nudoTypeNode?: unknown;
   properties?: Array<{
     key?: AstParam;
     value?: AstParam;
@@ -280,9 +290,13 @@ function collectPatternNames(
  * Bug 479：形参的 TS 声明类型文本（剥除 pass 的旁路 `nudoTypeText`）。
  * 无注解（.js 源 / 未标注）⇒ undefined ⇒ 形参仍是「无约束 any」。
  */
-function tsTypeOf(p: AstParam | undefined): { tsType?: string } {
+function tsTypeOf(p: AstParam | undefined): { tsType?: string; tsTypeNode?: unknown } {
   const t = p?.nudoTypeText;
-  return t ? { tsType: t } : {};
+  const n = p?.nudoTypeNode;
+  return {
+    ...(t ? { tsType: t } : {}),
+    ...(n !== undefined ? { tsTypeNode: n } : {}),
+  };
 }
 
 export function formalParamsFromNodes(
@@ -332,6 +346,7 @@ export function formalParamsFromNodes(
       // 语法上 `: T` 位于 `=` 之前）。之前只读 AssignmentPattern 节点 ⇒ 带整参
       // 默认值的解构形参 `tsType` 恒丢 ⇒ 入口域 any（假 may-throw）+ dts `_p0?: unknown`。
       const patternTsType = left?.nudoTypeText ?? p.nudoTypeText;
+      const patternTsTypeNode = left?.nudoTypeNode ?? p.nudoTypeNode;
       out.push({
         kind: "pattern",
         placeholder: `_p${index}`,
@@ -346,6 +361,7 @@ export function formalParamsFromNodes(
         // Bug 399：带默认值的解构形参可省略
         optional: true,
         ...(patternTsType ? { tsType: patternTsType } : {}),
+        ...(patternTsTypeNode !== undefined ? { tsTypeNode: patternTsTypeNode } : {}),
       });
       continue;
     }
@@ -374,7 +390,7 @@ export function formalParamsFromNodes(
         // Bug 399：rest 形参恒可省略
         optional: true,
         arity: { min: minArity, variadic: true },
-        ...(tsType.tsType ? tsType : tsTypeOf(arg)),
+        ...(tsType.tsType || tsType.tsTypeNode !== undefined ? tsType : tsTypeOf(arg)),
       });
       continue;
     }

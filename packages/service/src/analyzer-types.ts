@@ -71,6 +71,10 @@ export type FunctionAnalysis = {
    * 返回位复现）。缺省 = .js 源 / 未标注 ⇒ 零影响。
    */
   declaredReturnType?: string;
+  /** 返回注解节点旁路（与 `declaredReturnType` 同源；结构面，不进缓存） */
+  declaredReturnTypeNode?: unknown;
+  /** 声明返回注解的 Abs（分析期解析；dts 的 declared-vs-observed 决议输入） */
+  declaredReturnAbs?: Abs;
   /** BUG-133：自由函数 `this: T` 接收者注解原文（dts 子句） */
   thisReceiverType?: string;
   cases: CaseResult[];

@@ -227,7 +227,9 @@ export { isEsmProgram } from "./algebra/exec/transpile/meta.ts";
 // `x: string | null` 在入口观测 / dts / zod / guard 面整条退 any。
 export {
   absShapeForTsTypeText,
+  absTypeForTsTypeNode,
   absTypeForTsTypeText,
+  namedTypeNodesForSource,
   namedTypeTextsForSource,
   valueTypeTextsForSource,
   importedTypeTextsForSource,

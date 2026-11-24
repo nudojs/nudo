@@ -32,6 +32,7 @@
 | `ci-publish.mjs` | 发布前门禁 + OIDC 准备 + `changeset publish` | `.github/workflows/release.yml` 的 `publish-script`（`ci:publish`） |
 | `coverage-floors.mjs` | 打印逐包覆盖率与建议地板值 | `.github/workflows/ci.yml` nightly 的 `coverage:floors` |
 | `env-coverage-baseline.ts` | env / Node API 覆盖基线：生成报告 + `--check` 门禁 | `coverage:env`（`ci.yml`） |
+| `face-matrix.ts` | 构造 × 面矩阵（check 签名 / dts 文本 / 自编译 / 消费方编译）+ 基线棘轮，`--update` 重写基线 | `face:matrix` |
 | `fs-input-tests.mjs` | 上条门禁的测试清单单源（`--changed` 看不见 fs 读取面） | `check-fs-input-tests.mjs`、`run-fs-input-tests.mjs`、`vitest.config.ts` |
 | `gate-major.mjs` | major 版本发布门禁（保存基线 / 校验基线 / for-publish） | `.github/workflows/release.yml`、`ci:version`、`ci:publish` |
 | `gen-api-docs.mjs` | API docs 骨架生成（标记块注入，不覆盖手写正文） | `docs:gen` |

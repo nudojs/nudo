@@ -87,6 +87,7 @@ import {
   extractFormals,
   extractParamNames,
   extractReturnAnnotation,
+  extractReturnAnnotationNode,
   resolveFunctionNode,
   fnNameLoc,
   collectTopLevelFunctions,
@@ -95,6 +96,7 @@ import {
   collectBindings,
   buildNodeTypeMap,
 } from "./analyzer-ast.ts";
+import { declaredReturnAbsFor } from "./ts-annotation.ts";
 import {
   validateMockDirectives,
   dedupeCallRecords,
@@ -632,6 +634,10 @@ export function analyzeFileUncachedInner(
     // 据此保留源码里写下的类型。
     const formals = extractFormals(fn.node, source);
     const declaredReturnType = extractReturnAnnotation(fn.node);
+    const declaredReturnTypeNode = extractReturnAnnotationNode(fn.node);
+    const declaredReturnAbs = declaredReturnType
+      ? declaredReturnAbsFor(fn.node, source, filePath, fn.name)
+      : undefined;
     // BUG-133：`this: T` 接收者注解（strip 后 AST 不可见，helper 自己 keepTs；
     // 每文件的 keepTs 查询经 thisReceiverTypeOf 缓存 / 正则闸门）
     const thisReceiverType = thisReceiverTypeOf(fn.name);
@@ -641,6 +647,8 @@ export function analyzeFileUncachedInner(
       paramNames,
       ...(formals.length > 0 ? { formals } : {}),
       ...(declaredReturnType ? { declaredReturnType } : {}),
+      ...(declaredReturnTypeNode !== undefined ? { declaredReturnTypeNode } : {}),
+      ...(declaredReturnAbs ? { declaredReturnAbs } : {}),
       ...(thisReceiverType ? { thisReceiverType } : {}),
       cases: [],
     };
@@ -881,6 +889,10 @@ export function analyzeFileUncachedInner(
     if (directiveFnStmts.has(stmt)) continue;
     const synthFormals = extractFormals(node, source);
     const synthReturnAnnotation = extractReturnAnnotation(node);
+    const synthReturnAnnotationNode = extractReturnAnnotationNode(node);
+    const synthReturnAbs = synthReturnAnnotation
+      ? declaredReturnAbsFor(node, source, filePath, name)
+      : undefined;
     const synthThisReceiverType = thisReceiverTypeOf(name);
     const analysis: FunctionAnalysis = {
       name,
@@ -890,6 +902,8 @@ export function analyzeFileUncachedInner(
       // 看不到 `.ts` 源的声明类型。形参表面与 paramNames 同源（下标对齐）。
       ...(synthFormals.length > 0 ? { formals: synthFormals } : {}),
       ...(synthReturnAnnotation ? { declaredReturnType: synthReturnAnnotation } : {}),
+      ...(synthReturnAnnotationNode !== undefined ? { declaredReturnTypeNode: synthReturnAnnotationNode } : {}),
+      ...(synthReturnAbs ? { declaredReturnAbs: synthReturnAbs } : {}),
       ...(synthThisReceiverType ? { thisReceiverType: synthThisReceiverType } : {}),
       cases: [],
     };

@@ -1022,8 +1022,10 @@ export function computeMainSignature(
     // rest 位不可选（TS：剩余参数不能带 `?`）；解构位不可选（TS：绑定模式
     // 参数不能带 `?`）——**但**未绑定展开时渲染名是求值占位（`_p0`，普通
     // 标识符），此时可省性可以表达（BUG-107：`{ a } = {}` ⇒ `_p0?: any`）。
+    // BUG-420：`.d.ts` 的**声明**签名允许 `{ a }?: T`（实现签名才禁止
+    // 绑定模式带 `?`）。有默认值即可省，与绑定是否被契约/观测覆盖无关。
     const patternOptional =
-      decl?.isPattern === true && decl.hasDefault === true && !boundCovered;
+      decl?.isPattern === true && decl.hasDefault === true;
     const optional =
       isRest
         ? false
@@ -1601,8 +1603,13 @@ export function contractOnlySignature(
     // `function f(a = 1)` 的 dts 面把 `a` 印成必填，而 standard 面
     // （契约级 ∪ 声明级）印成可选 ⇒ 三面互斥；声明级默认值是 JS 语义的
     // 「可省略」，契约没否决它 ⇒ 两来源取并。
-    const optional =
-      isRest || decl.isPattern ? false : hit.abs ? hit.optional === true || decl.hasDefault : decl.hasDefault;
+    const optional = isRest
+      ? false
+      : decl.isPattern
+        ? decl.hasDefault
+        : hit.abs
+          ? hit.optional === true || decl.hasDefault
+          : decl.hasDefault;
     slots.push({
       name,
       type: typeStr,
@@ -1809,16 +1816,26 @@ export function tsDeclaredReturn(
   // - BUG-362：观测下标读带 `| undefined`，声明是更窄的 `T`。
   // 声明域比观测域更窄（`(): number` 而观测是 `number | string`）⇒ 声明
   // 是发布契约，必须保留；只有「观测更窄」时才让位（既有协变口径）。
-  const declaredAbs = observedAbs
-    ? absTypeForTsTypeText(raw, {
-        typeParams: new Map([...declared].map((n) => [n, anyAbs])),
-      })
-    : undefined;
+  const declaredAbs =
+    fn.declaredReturnAbs ??
+    (observedAbs
+      ? absTypeForTsTypeText(raw, {
+          typeParams: new Map([...declared].map((n) => [n, anyAbs])),
+        })
+      : undefined);
   const declaredNarrower =
     declaredAbs !== undefined &&
     observedAbs !== undefined &&
     leqAbs(declaredAbs, observedAbs).ok &&
     !leqAbs(observedAbs, declaredAbs).ok;
+  // 声明是观测的**超类型**（`(): keyof User` 而观测 `"name"`、`(): string |
+  // number` 而观测 `number`、`(): {a?: number; b: string}` 而观测 `{b:"s"}`）：
+  // 声明仍是有效公开契约，且消费者按声明收窄/拓宽 ⇒ 保留声明。此前只认
+  // 「声明更窄」，把这一类全部让给观测（报告 422/426/455/498 的共同政策面）。
+  const declaredCoversObserved =
+    declaredAbs !== undefined &&
+    observedAbs !== undefined &&
+    leqAbs(observedAbs, declaredAbs).ok;
   // BUG-403 配套：enum 作返回注解时 tsc 保留 `Color`，不会改写成成员字面量
   // 联合 / 基类型。观测域是新映射出的 `"red" | "green"` ⇒ 必须让声明名胜出。
   const bareName = raw.trim();
@@ -1833,6 +1850,7 @@ export function tsDeclaredReturn(
     (observed === genericRef[1] || observed.startsWith(`${genericRef[1]}<unknown`));
   const declarationMorePrecise =
     declaredNarrower ||
+    declaredCoversObserved ||
     namedEnumReturn ||
     genericDeclMorePrecise ||
     hasLibGlobalTypeText(raw) ||
@@ -1843,7 +1861,7 @@ export function tsDeclaredReturn(
     (observed.includes("| undefined") && !raw.includes("| undefined"));
   if (
     !usesTypeParam &&
-    raw !== "void" &&
+    raw.trim() !== "this" &&
     !declarationMorePrecise &&
     !isNoInfoObservedType(observed) &&
     observed !== "never"

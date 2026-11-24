@@ -130,6 +130,12 @@ export function extractReturnAnnotation(node: Node): string | undefined {
   return typeof t === "string" && t.length > 0 ? t : undefined;
 }
 
+/** 返回注解**节点**旁路（与文本同源；node→Abs 单点解析的输入）。 */
+export function extractReturnAnnotationNode(node: Node): unknown {
+  const fn = node.type === "ExportDefaultDeclaration" ? node.declaration : node;
+  return (fn as unknown as { nudoReturnTypeNode?: unknown }).nudoReturnTypeNode;
+}
+
 export function resolveFunctionNode(node: Node): Node {
   if (node.type === "ExportNamedDeclaration" && node.declaration) return resolveFunctionNode(node.declaration);
   if (node.type === "ExportDefaultDeclaration") return resolveFunctionNode(node.declaration);

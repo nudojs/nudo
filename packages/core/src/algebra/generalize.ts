@@ -67,7 +67,7 @@ import { $invoke, $staticInvoke } from "./exec/class.ts";
 import { isNudoThrow } from "./exec/nudo-throw.ts";
 import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
 import { resolveExportSlotCall } from "./contract/export-slot.ts";
-import { absShapeForTsTypeText, absTypeForTsTypeText, namedTypeTextsForSource, valueTypeTextsForSource, type AnnotationEnv } from "./contract/ts-type-shape.ts";
+import { absShapeForTsTypeText, absTypeForTsTypeNode, absTypeForTsTypeText, namedTypeNodesForSource, namedTypeTextsForSource, valueTypeTextsForSource, type AnnotationEnv } from "./contract/ts-type-shape.ts";
 
 /**
  * generalize 的 evaluator 模块执行缓存（按 source；run 不依赖实参）。
@@ -297,8 +297,13 @@ function annotationAbsForText(
   text: string | undefined,
   term?: Term,
   env?: AnnotationEnv,
+  node?: unknown,
+  source?: string,
 ): Abs {
-  const mapped = absTypeForTsTypeText(text, env);
+  const mapped =
+    node !== undefined
+      ? absTypeForTsTypeNode(node, env, source) ?? absTypeForTsTypeText(text, env)
+      : absTypeForTsTypeText(text, env);
   if (!mapped) return abs({ k: "any" }, term, pTrue, "path");
   const base = abs(mapped.shape, mapped.term ?? term, pTrue, "path");
   const mappedFacets = mapped.facets ? { ...base, facets: mapped.facets } : base;
@@ -352,6 +357,10 @@ export function buildEntryDomain(
       ...(opts.annotationEnv?.namedTypes ?? []),
       ...namedTypeTextsForSource(source),
     ]),
+    namedTypeNodes: new Map([
+      ...(opts.annotationEnv?.namedTypeNodes ?? []),
+      ...namedTypeNodesForSource(source),
+    ]),
     valueTypes: new Map([
       ...(opts.annotationEnv?.valueTypes ?? []),
       ...valueTypeTextsForSource(source),
@@ -365,8 +374,12 @@ export function buildEntryDomain(
     const declared =
       f.tsType === undefined
         ? abs({ k: "any" }, term, pTrue, "path")
-        : annotationAbsForText(f.tsType, term, env);
-    if (f.tsType !== undefined && absTypeForTsTypeText(f.tsType, env) === undefined) {
+        : annotationAbsForText(f.tsType, term, env, f.tsTypeNode, source);
+    const mappedForCheck =
+      f.tsTypeNode !== undefined
+        ? absTypeForTsTypeNode(f.tsTypeNode, env, source) ?? absTypeForTsTypeText(f.tsType, env)
+        : absTypeForTsTypeText(f.tsType, env);
+    if (f.tsType !== undefined && mappedForCheck === undefined) {
       unresolved.push(`${"name" in f ? f.name : f.placeholder}: ${f.tsType}`);
     }
     let domainAbs = declared;
@@ -450,6 +463,33 @@ function withOptionalUndefined(a: Abs, f: FormalParam | undefined): Abs {
  * 参数属性在本仓的默认解析下已糖化成 `this.<name> = <name>` 赋值 ⇒ 实参带上
  * 注解后槽位自然得到域，不需要另建播种通道。
  */
+/**
+ * BUG-435：构造器参数属性 / 默认形参的初始化式域。
+ *
+ * `constructor(public z = 1)` 的 `z` 在 TS 里是 `number`（默认值拓宽），
+ * 此前 `ctorParamAbsArgs` 只看注解 ⇒ 无注解默认值落 any ⇒ `this.z + 1`
+ * 记假 may-throw。与普通形参 `defaultParamInitDomainOf` 同口径。
+ */
+function ctorParamDefaultDomainOf(
+  fileAst: ReturnType<typeof babelParse>,
+  clsName: string,
+  paramName: string,
+): Abs | undefined {
+  for (const raw of ctorParamNodesOf(fileAst, clsName)) {
+    let p = raw as { type?: string; parameter?: unknown };
+    if (p?.type === "TSParameterProperty") p = p.parameter as { type?: string };
+    const ap = p as
+      | { type?: string; left?: { type?: string; name?: string }; right?: unknown }
+      | undefined;
+    if (ap?.type !== "AssignmentPattern" || ap.left?.type !== "Identifier" || ap.left.name !== paramName) {
+      continue;
+    }
+    const init = defaultEntryAbsOf(ap.right);
+    return init ? widenForAssign(init) : undefined;
+  }
+  return undefined;
+}
+
 export function ctorParamAbsArgs(
   fileAst: ReturnType<typeof babelParse>,
   clsName: string,
@@ -464,8 +504,14 @@ export function ctorParamAbsArgs(
       }
     : undefined;
   return ctorFormalsOf(fileAst, clsName, source).map((f) => {
-    const abs = annotationAbsForText(f.tsType, undefined, env);
-    return withOptionalUndefined(abs, f);
+    const domainAbs =
+      f.tsType !== undefined
+        ? annotationAbsForText(f.tsType, undefined, env, f.tsTypeNode, source)
+        : f.kind === "default"
+          ? ctorParamDefaultDomainOf(fileAst, clsName, f.name) ??
+            abs({ k: "any" }, undefined, pTrue, "path")
+          : abs({ k: "any" }, undefined, pTrue, "path");
+    return withOptionalUndefined(domainAbs, f);
   });
 }
 
@@ -680,19 +726,27 @@ function classEntryPolyFn(
       ...(opts.annotationEnv?.namedTypes ?? []),
       ...namedTypeTextsForSource(source),
     ]),
+    namedTypeNodes: new Map([
+      ...(opts.annotationEnv?.namedTypeNodes ?? []),
+      ...namedTypeNodesForSource(source),
+    ]),
     valueTypes: new Map([
       ...(opts.annotationEnv?.valueTypes ?? []),
       ...valueTypeTextsForSource(source),
     ]),
   };
   const typeParams: TypeParam[] = formals.map((f, i) => {
-    // 构造器形参的 TS 声明类型（无注解 ⇒ 无约束 any，与普通入口同口径）
+    // 构造器形参的 TS 声明类型（无注解 ⇒ 默认值域 / 无约束 any，与普通入口同口径）
+    const domainAbs =
+      f.tsType !== undefined
+        ? annotationAbsForText(f.tsType, undefined, annotationEnv, f.tsTypeNode, source)
+        : f.kind === "default"
+          ? ctorParamDefaultDomainOf(fileAst, fnName, f.name) ??
+            abs({ k: "any" }, undefined, pTrue, "path")
+          : abs({ k: "any" }, undefined, pTrue, "path");
     return {
       id: `A${i + 1}`,
-      value: withOptionalUndefined(
-        annotationAbsForText(f.tsType, undefined, annotationEnv),
-        f,
-      ),
+      value: withOptionalUndefined(domainAbs, f),
     };
   });
   return {
@@ -3210,6 +3264,7 @@ export function buildArgsFromAssume(
   const annotationEnv: AnnotationEnv = {
     typeParams: typeParamEnvOf(source, fnName),
     namedTypes: namedTypeTextsForSource(source),
+    namedTypeNodes: namedTypeNodesForSource(source),
     valueTypes: valueTypeTextsForSource(source),
   };
   let defaultAst: ReturnType<typeof babelParse> | undefined;

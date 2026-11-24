@@ -289,7 +289,7 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType {
           ? { kind: "literal", text: String(v) }
           : { kind: "prim", name: "number" };
       }
-      if (typeof v === "bigint") return { kind: "prim", name: "bigint" };
+      if (typeof v === "bigint") return { kind: "literal", text: `${String(v)}n` };
     }
   }
 

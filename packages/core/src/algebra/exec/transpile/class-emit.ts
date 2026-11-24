@@ -36,6 +36,30 @@ import {
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { transpileFnBodyStmts, emitFnBlockBody, paramNamesOf } from "./stmt.ts";
 import { asyncBodyPlan } from "./async-plan.ts";
+import {
+  absTypeForTsTypeText,
+  entryAbsLiteralSourceOf,
+  namedTypeTextsForSource,
+  resolveNamedTypeText,
+} from "../../contract/ts-type-shape.ts";
+
+/**
+ * BUG-414：类字段声明注解 → `$declDomain(<declaredAbs>, init)` 的第一实参。
+ *
+ * `items: number[] = []` 的运行时域必须是**声明域**（arr(number)），
+ * 初始化器只作值证据；否则 `this.items` 是空元组，`.map` 折成 `[]`。
+ * 注解不可映射 / 无注解 ⇒ undefined（保持旧行为，不伪造）。
+ */
+function classFieldDeclaredSource(
+  mem: { nudoTypeText?: string },
+  opts: TranspileOptions,
+): string | undefined {
+  const text = mem.nudoTypeText;
+  if (!text) return undefined;
+  const named = opts.source ? namedTypeTextsForSource(opts.source) : undefined;
+  const abs = absTypeForTsTypeText(resolveNamedTypeText(text, named));
+  return abs ? entryAbsLiteralSourceOf(abs) : undefined;
+}
 
 /**
  * Bug 1151：**类** setter thunk 形参载体（**基名**）——实际名经
@@ -190,6 +214,24 @@ function scopePrivateNames(node: unknown, scope: string): unknown {
   if (type === "ClassDeclaration" || type === "ClassExpression") return { ...src };
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(src)) out[k] = scopePrivateNames(src[k], scope);
+  // 旁路字段是**不可枚举**的，Object.keys 看不见；私有名作用域化是深拷贝，
+  // 必须显式搬运，否则类字段 / 返回注解文本在副本里丢失（BUG-414）。
+  for (const k of [
+    "nudoTypeText",
+    "nudoTypeNode",
+    "nudoReturnTypeText",
+    "nudoReturnTypeNode",
+    "nudoTypeArguments",
+    "nudoTypeArgumentNodes",
+  ]) {
+    if (!(k in src)) continue;
+    Object.defineProperty(out, k, {
+      value: src[k],
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
+  }
   return out;
 }
 
@@ -463,9 +505,14 @@ export function classSpecOf(
           // 注入——实例 super 合法读原型链，$getSuper 已正确处理
           ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
         };
-        const vsrc = m.value
+        const rawVsrc = m.value
           ? emitTranspileExpression(m.value as Expression, fieldOpts)
           : "$lit(void 0)";
+        const declaredSrc = classFieldDeclaredSource(
+          m as { nudoTypeText?: string },
+          fieldOpts,
+        );
+        const vsrc = declaredSrc ? `$declDomain(${declaredSrc}, ${rawVsrc})` : rawVsrc;
         // N4：静态字段 thunk 求值于 $class 内——`let C = $class(…)` 尚未
         // 赋值，类名自由引用命中宿主 TDZ ReferenceError（原生
         // ClassDefinitionEvaluation 先初始化类体自有词法绑定再跑静态字段
@@ -519,9 +566,14 @@ export function classSpecOf(
       // Bug 59：实例字段——每次构造以新实例为 this 按源序求值（此前误编为
       // 静态：定义期跑一次、错误 this、永不落实例）
       const fieldOpts: TranspileOptions = { ...methodOptsBase };
-      const vsrc = m.value
+      const rawVsrc = m.value
         ? emitTranspileExpression(m.value as Expression, fieldOpts)
         : "$lit(void 0)";
+      const declaredSrc = classFieldDeclaredSource(
+        m as { nudoTypeText?: string },
+        fieldOpts,
+      );
+      const vsrc = declaredSrc ? `$declDomain(${declaredSrc}, ${rawVsrc})` : rawVsrc;
       const initSrc = thunkOf(vsrc, depth + 2);
       if (keyR && "name" in keyR) {
         // Bug 84：私有字段透传 private 标记（槽落地打 Slot.internal）

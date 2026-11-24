@@ -33,9 +33,12 @@ import { formalParamsFromNodes } from "../format/param-surface.ts";
 import { relGuardOf } from "../exec/transpile/stmt/predicates.ts";
 import {
   absShapeForTsTypeText,
+  absTypeForTsTypeNode,
   absTypeForTsTypeText,
+  namedTypeNodesForSource,
   namedTypeTextsForSource,
   resolveNamedTypeText,
+  valueTypeTextsForSource,
 } from "../contract/ts-type-shape.ts";
 
 // ---------------------------------------------------------------------------
@@ -3201,6 +3204,309 @@ describe("TS 声明类型文本 → Abs：字面量值域 / 索引签名 / 方�
         },
       },
     });
+  });
+
+  it("对象成员单点模型：调用 / 构造 / 访问器 / symbol / readonly 索引 / 接口 extends", () => {
+    // 调用签名：对象类型可调用，不再整条丢弃成 `{}`。
+    const call = absTypeForTsTypeText("{ (x: number): string }")!;
+    expect(call.shape).toMatchObject({
+      k: "fn",
+      paramTypes: [{ shape: { k: "prim", type: "number" } }],
+      returnType: { shape: { k: "prim", type: "string" } },
+    });
+
+    // 构造签名：`new` 前缀不再被当方法名；ctor facet 可判。
+    const ctor = absTypeForTsTypeText("{ new (x: string): Date }")!;
+    expect(ctor.shape).toMatchObject({
+      k: "fn",
+      ctor: true,
+      paramTypes: [{ shape: { k: "prim", type: "string" } }],
+    });
+
+    // 访问器：getter 读域；仅 setter 时用参数域；get+set 时 getter 优先。
+    const getOnly = absTypeForTsTypeText("{ get x(): number }")!;
+    expect(getOnly.shape).toMatchObject({
+      k: "obj",
+      slots: { x: { value: { shape: { k: "prim", type: "number" } } } },
+    });
+    const setOnly = absTypeForTsTypeText("{ set x(v: string) }")!;
+    expect(setOnly.shape).toMatchObject({
+      k: "obj",
+      slots: { x: { value: { shape: { k: "prim", type: "string" } } } },
+    });
+    const both = absTypeForTsTypeText("{ get x(): number; set x(v: string) }")!;
+    expect(both.shape).toMatchObject({
+      k: "obj",
+      slots: { x: { value: { shape: { k: "prim", type: "number" } } } },
+    });
+
+    // 计算 symbol 成员：进 `@@iterator` 槽，不被索引签名分支吞掉。
+    const sym = absTypeForTsTypeText("{ [Symbol.iterator](): number }")!;
+    expect(sym.shape.k).toBe("obj");
+    expect(
+      sym.shape.k === "obj" ? sym.shape.slots["@@iterator"]?.value.shape.k : undefined,
+    ).toBe("fn");
+
+    // readonly 索引签名仍进 shape.index。
+    const roIdx = absTypeForTsTypeText("{ readonly [k: string]: number }")!;
+    expect(roIdx.shape).toMatchObject({
+      k: "obj",
+      index: {
+        key: { shape: { k: "prim", type: "string" } },
+        value: { shape: { k: "prim", type: "number" } },
+      },
+    });
+
+    // 泛型方法签名：键清洗掉 `<T>`，不整条丢。
+    const genericMethod = absTypeForTsTypeText("{ m<T>(x: number): number }")!;
+    expect(
+      genericMethod.shape.k === "obj" ? genericMethod.shape.slots.m?.value.shape.k : undefined,
+    ).toBe("fn");
+
+    // 类型级构造签名：`new (x) => T` 的 ctor facet 必须保留（与普通
+    // 函数类型 `(x) => T` 是不同维度）。
+    const ctorFn = absTypeForTsTypeText("new (x: number) => Date")!;
+    expect(ctorFn.shape).toMatchObject({
+      k: "fn",
+      ctor: true,
+      params: ["x"],
+      paramTypes: [{ shape: { k: "prim", type: "number" } }],
+    });
+    expect(absTypeForTsTypeText("(x: number) => Date")!.shape).toMatchObject({
+      k: "fn",
+    });
+    expect(absTypeForTsTypeText("(x: number) => Date")!.shape.k === "fn"
+      ? (absTypeForTsTypeText("(x: number) => Date")!.shape as { ctor?: boolean }).ctor
+      : undefined).toBeUndefined();
+
+    // 接口 extends：基接口成员进入派生类型的摊平文本与 Abs 槽。
+    const named = namedTypeTextsForSource(
+      `interface Base { name: string }
+interface Admin extends Base { role: string }
+`,
+    );
+    const admin = resolveNamedTypeText("Admin", named)!;
+    expect(admin).toContain("name: string");
+    expect(admin).toContain("role: string");
+    expect(absShapeForTsTypeText(admin)).toMatchObject({
+      k: "obj",
+      slots: {
+        name: { value: { shape: { k: "prim", type: "string" } } },
+        role: { value: { shape: { k: "prim", type: "string" } } },
+      },
+    });
+  });
+
+  it("结构面节点映射：访问器 / 调用 / 构造 / symbol / 索引 / interface extends", () => {
+    const ann = (type: string) => ({ type: "TSTypeAnnotation", typeAnnotation: { type } });
+    const lit = (members: unknown[]) => ({ type: "TSTypeLiteral", members });
+
+    const getter = absTypeForTsTypeNode(
+      lit([
+        {
+          type: "TSMethodSignature",
+          kind: "get",
+          key: { type: "Identifier", name: "x" },
+          params: [],
+          returnType: ann("TSNumberKeyword"),
+        },
+      ]),
+    )!;
+    expect(getter.shape).toMatchObject({
+      k: "obj",
+      slots: { x: { value: { shape: { k: "prim", type: "number" } } } },
+    });
+
+    const call = absTypeForTsTypeNode(
+      lit([
+        {
+          type: "TSCallSignatureDeclaration",
+          params: [{ type: "Identifier", name: "x", typeAnnotation: ann("TSNumberKeyword") }],
+          returnType: ann("TSStringKeyword"),
+        },
+      ]),
+    )!;
+    expect(call.shape).toMatchObject({
+      k: "fn",
+      paramTypes: [{ shape: { k: "prim", type: "number" } }],
+      returnType: { shape: { k: "prim", type: "string" } },
+    });
+
+    const ctor = absTypeForTsTypeNode(
+      lit([
+        {
+          type: "TSConstructSignatureDeclaration",
+          params: [{ type: "Identifier", name: "x", typeAnnotation: ann("TSNumberKeyword") }],
+          returnType: ann("TSObjectKeyword"),
+        },
+      ]),
+    )!;
+    expect(ctor.shape).toMatchObject({ k: "fn", ctor: true });
+
+    const sym = absTypeForTsTypeNode(
+      lit([
+        {
+          type: "TSMethodSignature",
+          kind: "method",
+          computed: true,
+          key: {
+            type: "MemberExpression",
+            object: { type: "Identifier", name: "Symbol" },
+            property: { type: "Identifier", name: "iterator" },
+          },
+          params: [],
+          returnType: ann("TSNumberKeyword"),
+        },
+      ]),
+    )!;
+    expect(sym.shape.k).toBe("obj");
+    expect(sym.shape.k === "obj" ? sym.shape.slots["@@iterator"]?.value.shape.k : undefined).toBe("fn");
+
+    const idx = absTypeForTsTypeNode(
+      lit([
+        {
+          type: "TSIndexSignature",
+          parameters: [{ type: "Identifier", name: "k", typeAnnotation: ann("TSStringKeyword") }],
+          typeAnnotation: ann("TSNumberKeyword"),
+        },
+      ]),
+    )!;
+    expect(idx.shape).toMatchObject({
+      k: "obj",
+      index: {
+        key: { shape: { k: "prim", type: "string" } },
+        value: { shape: { k: "prim", type: "number" } },
+      },
+    });
+
+    const admin = absTypeForTsTypeNode(
+      {
+        type: "TSInterfaceDeclaration",
+        id: { type: "Identifier", name: "Admin" },
+        extends: [{ type: "TSInterfaceHeritage", expression: { type: "Identifier", name: "Base" } }],
+        body: {
+          type: "TSInterfaceBody",
+          body: [
+            {
+              type: "TSPropertySignature",
+              key: { type: "Identifier", name: "role" },
+              typeAnnotation: ann("TSStringKeyword"),
+            },
+          ],
+        },
+      },
+      { namedTypes: new Map([["Base", "{ name: string }"]]) },
+    )!;
+    expect(admin.shape).toMatchObject({
+      k: "obj",
+      slots: {
+        name: { value: { shape: { k: "prim", type: "string" } } },
+        role: { value: { shape: { k: "prim", type: "string" } } },
+      },
+    });
+  });
+
+  it("utility type 注解映射：Partial / Required / Readonly / Pick / Omit", () => {
+    const named = namedTypeTextsForSource(`interface User { name: string; age?: number }`);
+    const env = { namedTypes: named };
+    const partial = absTypeForTsTypeText("Partial<User>", env)!;
+    expect(partial.shape).toMatchObject({
+      k: "obj",
+      slots: { name: { optional: true }, age: { optional: true } },
+    });
+    const required = absTypeForTsTypeText("Required<User>", env)!;
+    expect(
+      required.shape.k === "obj" ? required.shape.slots.age?.optional : "missing",
+    ).toBeUndefined();
+    const readonly = absTypeForTsTypeText("Readonly<User>", env)!;
+    expect(
+      readonly.shape.k === "obj" ? readonly.shape.slots.name?.readonly : undefined,
+    ).toBe(true);
+    const pick = absTypeForTsTypeText('Pick<User, "name">', env)!;
+    expect(pick.shape.k === "obj" ? Object.keys(pick.shape.slots) : []).toEqual(["name"]);
+    const omit = absTypeForTsTypeText('Omit<User, "age">', env)!;
+    expect(omit.shape.k === "obj" ? Object.keys(omit.shape.slots) : []).toEqual(["name"]);
+  });
+
+  it("`typeof <dotted>` 的值类型表：对象字面量成员路径可解析", () => {
+    const values = valueTypeTextsForSource(
+      `const cfg = { port: 3000, name: "x", nested: { on: true, tags: ["a", "b"] } };`,
+    );
+    expect(values.get("cfg.port")).toBe("number");
+    expect(values.get("cfg.name")).toBe("string");
+    expect(values.get("cfg.nested.on")).toBe("boolean");
+    expect(values.get("cfg.nested.tags")).toBe("string[]");
+    expect(absShapeForTsTypeText("typeof cfg.port", { valueTypes: values })).toMatchObject({
+      k: "prim",
+      type: "number",
+    });
+    expect(absShapeForTsTypeText("typeof cfg.nested", { valueTypes: values })).toMatchObject({
+      k: "obj",
+      slots: { on: { value: { shape: { k: "prim", type: "boolean" } } } },
+    });
+  });
+
+  it("inline `import(\"spec\").T`：env.importTypes 文本表可解析", () => {
+    const a = absTypeForTsTypeText('import("./types").User', {
+      importTypes: new Map([["./types#User", "{ name: string; age: number }"]]),
+    })!;
+    expect(a.shape).toMatchObject({
+      k: "obj",
+      slots: {
+        name: { value: { shape: { k: "prim", type: "string" } } },
+        age: { value: { shape: { k: "prim", type: "number" } } },
+      },
+    });
+  });
+
+  it("namedTypeNodesForSource：interface / type alias 结构节点由 TSTypeReference 直接消费", () => {
+    const nodes = namedTypeNodesForSource(
+      `interface Base { name: string }
+interface Admin extends Base { get x(): number }
+type Alias = Admin;
+`,
+    );
+    expect(nodes.get("Base")?.type).toBe("TSInterfaceDeclaration");
+    expect(nodes.get("Admin")?.type).toBe("TSInterfaceDeclaration");
+    const ref = (name: string) => ({
+      type: "TSTypeReference",
+      typeName: { type: "Identifier", name },
+    });
+    const admin = absTypeForTsTypeNode(ref("Admin"), { namedTypeNodes: nodes })!;
+    expect(admin.shape).toMatchObject({
+      k: "obj",
+      slots: {
+        name: { value: { shape: { k: "prim", type: "string" } } },
+        x: { value: { shape: { k: "prim", type: "number" } } },
+      },
+    });
+    const alias = absTypeForTsTypeNode(ref("Alias"), { namedTypeNodes: nodes })!;
+    expect(alias.shape).toMatchObject({ k: "obj", slots: { name: {}, x: {} } });
+  });
+
+  it("节点面迭代协议泛型：Iterable / Iterator / AsyncIterable 映射为可迭代 Abs", () => {
+    const ref = (name: string, arg: string) => ({
+      type: "TSTypeReference",
+      typeName: { type: "Identifier", name },
+      typeParameters: { params: [{ type: arg }] },
+    });
+    const iterable = absTypeForTsTypeNode(ref("Iterable", "TSNumberKeyword"))!;
+    expect(iterable.shape.k).toBe("obj");
+    expect(
+      iterable.shape.k === "obj" ? iterable.shape.slots["@@iterator"]?.value.shape.k : undefined,
+    ).toBe("fn");
+    const iterator = absTypeForTsTypeNode(ref("Iterator", "TSNumberKeyword"))!;
+    expect(iterator.shape.k).toBe("obj");
+    expect(
+      iterator.shape.k === "obj" ? iterator.shape.slots.next?.value.shape.k : undefined,
+    ).toBe("fn");
+    const asyncIterable = absTypeForTsTypeNode(ref("AsyncIterable", "TSNumberKeyword"))!;
+    expect(asyncIterable.shape.k).toBe("obj");
+    expect(
+      asyncIterable.shape.k === "obj"
+        ? asyncIterable.shape.slots["@@asyncIterator"]?.value.shape.k
+        : undefined,
+    ).toBe("fn");
   });
 
   it("显式 unknown 注解带声明项，不再被当成推断失败", () => {

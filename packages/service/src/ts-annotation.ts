@@ -28,8 +28,13 @@ import type { Abs, Shape } from "@nudojs/core";
 import { abs as makeAbsVal, anyAbs, spread, withProvenance } from "@nudojs/core";
 import {
   absShapeForTsTypeText,
+  absTypeForTsTypeNode,
   absTypeForTsTypeText,
   importedTypeTextsForSource,
+  namedTypeNodesForSource,
+  namedTypeTextsForSource,
+  typeParamEnvForFunction,
+  valueTypeTextsForSource,
   keySetIncompleteAbs,
   markKeySetOpenAbs,
   type AnnotationEnv,
@@ -61,6 +66,76 @@ export function importedTypeTextsForFile(
   }
   importedTypeMemo.set(key, texts);
   return texts;
+}
+
+const inlineImportMemo = new Map<string, ReadonlyMap<string, string>>();
+const INLINE_IMPORT_MEMO_MAX = 32;
+
+/**
+ * inline `import("./types").T` 的声明文本表，键 = `spec#T`。
+ *
+ * 与 `importedTypeTextsForFile` 同源（`typeAnnotationSourceOf` 读写规则、
+ * `namedTypeTextsForSource` 摊平）；只扫源码里的 import-type 文本，不执行、
+ * 不装载模块。读不到 ⇒ 空表（调用方回落 any/undefined，不猜）。
+ */
+export function inlineImportTypeTextsForFile(
+  source: string,
+  filePath: string | undefined,
+): ReadonlyMap<string, string> {
+  if (!filePath) return new Map();
+  const key = `${filePath}\u0000${source}`;
+  const hit = inlineImportMemo.get(key);
+  if (hit) return hit;
+  const out = new Map<string, string>();
+  const re = /import\(\s*["']([^"']+)["']\s*\)\s*\.\s*([A-Za-z_$][\w$]*)/g;
+  for (const m of source.matchAll(re)) {
+    const spec = m[1]!;
+    const name = m[2]!;
+    const loaded = typeAnnotationSourceOf(spec, filePath);
+    if (!loaded) continue;
+    const text = namedTypeTextsForSource(loaded).get(name);
+    if (text !== undefined) out.set(`${spec}#${name}`, text);
+  }
+  if (inlineImportMemo.size >= INLINE_IMPORT_MEMO_MAX) {
+    const oldest = inlineImportMemo.keys().next().value;
+    if (oldest !== undefined) inlineImportMemo.delete(oldest);
+  }
+  inlineImportMemo.set(key, out);
+  return out;
+}
+
+/**
+ * 返回注解 → Abs（**分析期**解析，带同文件 / 导入 / inline import / 值表）。
+ *
+ * dts 的 `tsDeclaredReturn` 只拿到投影上下文，没有源码；把声明 Abs 在分析期
+ * 算好随 `FunctionAnalysis` 带过去，才能做 declared-vs-observed 决议
+ * （BUG-422 的 `keyof User` / 具名别名 / 索引访问）。
+ */
+export function declaredReturnAbsFor(
+  node: unknown,
+  source: string,
+  filePath: string | undefined,
+  fnName: string,
+): Abs | undefined {
+  const n = node as {
+    nudoReturnTypeNode?: unknown;
+    nudoReturnTypeText?: string;
+  } | undefined;
+  if (!n) return undefined;
+  const text = n.nudoReturnTypeText;
+  const annNode = n.nudoReturnTypeNode;
+  if (annNode === undefined && text === undefined) return undefined;
+  const env: AnnotationEnv = {
+    typeParams: typeParamEnvForFunction(source, fnName),
+    namedTypes: new Map([
+      ...importedTypeTextsForFile(source, filePath),
+      ...namedTypeTextsForSource(source),
+    ]),
+    namedTypeNodes: namedTypeNodesForSource(source),
+    importTypes: inlineImportTypeTextsForFile(source, filePath),
+    valueTypes: valueTypeTextsForSource(source),
+  };
+  return absTypeForTsTypeNode(annNode, env, source) ?? absTypeForTsTypeText(text, env);
 }
 
 /**

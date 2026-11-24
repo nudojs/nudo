@@ -30,6 +30,7 @@ import {
   surfaceParamNames,
   userSymbolMemberKeys,
   valueTypeTextOfInit,
+  literalTypeTextOfInit,
 } from "./dts-surface-value.ts";
 import {
   cjsPropName,
@@ -191,8 +192,15 @@ function namespaceMemberLines(
         // ⇒ 无注解成员一律 `unknown`（消费方 `const n: number = N.inferred`
         // 报 TS2322）。表达式 / 标识符不猜（`valueTypeTextOfInit` 给 unknown）。
         const annotation = surfaceParamType(source, id).slice(2);
+        // BUG-443：namespace `const` 与顶层 `const` 同挂字面量闸门
+        // （tsc：`export const v = 1` ⇒ `v: 1`，不拓宽成 number）。
+        const literal =
+          kind === "const" && annotation === ""
+            ? literalTypeTextOfInit(d.init as SurfaceNode | undefined)
+            : undefined;
         const t =
           annotation ||
+          literal ||
           (id?.type === "Identifier"
             ? valueTypeTextOfInit(d.init as SurfaceNode | undefined, source)
             : "unknown");
@@ -200,7 +208,8 @@ function namespaceMemberLines(
       }
       return out;
     }
-    case "FunctionDeclaration": {
+    case "FunctionDeclaration":
+    case "TSDeclareFunction": {
       const name = surfaceName(decl.id as SurfaceNode | undefined);
       if (!name) return [];
       const params = ((decl.params as SurfaceNode[] | undefined) ?? []).map((p, i) =>
@@ -259,10 +268,15 @@ export function namespaceMembersOf(decl: SurfaceNode, source: string): string[] 
     ];
   }
   const out: string[] = [];
+  // BUG-462：ambient namespace（`declare namespace`）的成员在 TS 里隐式导出；
+  // 普通 namespace 仍只收 `export` 成员。
+  const ambient = (decl as { declare?: boolean }).declare === true;
   for (const stmt of (body?.body as SurfaceNode[] | undefined) ?? []) {
-    // 只有 `export` 的成员对外可见（未导出成员是 namespace 内部绑定）
-    if (stmt.type !== "ExportNamedDeclaration") continue;
-    out.push(...namespaceMemberLines(stmt.declaration as SurfaceNode | null | undefined, source));
+    if (stmt.type === "ExportNamedDeclaration") {
+      out.push(...namespaceMemberLines(stmt.declaration as SurfaceNode | null | undefined, source));
+      continue;
+    }
+    if (ambient) out.push(...namespaceMemberLines(stmt as SurfaceNode, source));
   }
   return out;
 }
@@ -542,8 +556,11 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
           const id = surfaceName(decl.id as SurfaceNode | undefined);
           if (id) {
             bind(id, id);
+            // BUG-457：同名 namespace 是 TS 声明合并，不是后写覆盖。
+            // 合并成员（保持源码序）；tsc 也可逐个块发射，单块合并等价。
+            const prev = surface.namespaces!.get(id);
             surface.namespaces!.set(id, {
-              members: namespaceMembersOf(decl, source),
+              members: [...(prev?.members ?? []), ...namespaceMembersOf(decl, source)],
             });
           }
         }
@@ -642,9 +659,11 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       // join）——`classFieldTypeOfInit` 只给宽类型 `object` / `unknown[]`，
       // 消费方 `cfg.a` 直接 TS2339。与 CJS `module.exports = {…}` 同口径。
       if (!surface.values.has("_default")) {
+        const literal = literalTypeTextOfInit(decl);
         surface.values.set("_default", {
           kind: "const",
-          typeText: valueTypeTextOfInit(decl, source),
+          typeText: literal ?? valueTypeTextOfInit(decl, source),
+          ...(literal !== undefined ? { literalConst: true } : {}),
         });
       }
       bind("default", "_default");
@@ -1061,7 +1080,8 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
           "unknown";
         out.push(`function ${name}(${params}): ${ret};`);
       } else {
-        out.push(`const ${name}: ${valueTypeTextOfInit(init, source)};`);
+        const literal = literalTypeTextOfInit(init);
+        out.push(`const ${name}: ${literal ?? valueTypeTextOfInit(init, source)};`);
       }
     }
     return out;
@@ -1145,11 +1165,11 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
   // 「注解里的名字在产物里是否可解析」的判据只登记 interface / type 别名
   // ⇒ `paint(c: Color)` 被误判成「type not declared in this module」整条丢弃
   // （形参 / 字段回落 unknown，返回位靠声明注解回落）。两张清单同源：
-  // 只有**会被发射**的导出 enum 才算可解析（未导出 enum 在产物里没有声明，
-  // 放行会 TS2304）。必须在类面扫描之前登记（类字段注解用同一判据）。
+  // **所有** enum 都会被 `dtsValueDeclarations` 发射（导出 enum 带 export；
+  // 非导出 enum 发模块局部 `declare enum`，见 BUG-453），因此都可解析。
+  // 必须在类面扫描之前登记（类字段注解用同一判据）。
   for (const [local, value] of surface.values) {
     if (value.kind !== "enum") continue;
-    if (dtsExportNamesOf(surface, local).length === 0) continue;
     surface.typeNames!.add(local);
   }
 

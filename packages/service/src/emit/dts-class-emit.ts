@@ -266,11 +266,12 @@ export function dtsClassDeclaration(
   for (const a of cls?.accessors ?? []) {
     const acc = a.accessibility ? `${a.accessibility} ` : "";
     const st = a.isStatic ? "static " : "";
+    const ab = a.isAbstract ? "abstract " : "";
     const key = memberKeyText(a.name, a.symbolKey);
     body.push(
       a.kind === "get"
-        ? `${acc}${st}get ${key}(): ${a.type};`
-        : `${acc}${st}set ${key}(v: ${a.type});`,
+        ? `${acc}${st}${ab}get ${key}(): ${a.type};`
+        : `${acc}${st}${ab}set ${key}(v: ${a.type});`,
     );
   }
   for (const f of fields) {

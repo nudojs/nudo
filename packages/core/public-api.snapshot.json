@@ -1532,6 +1532,7 @@
       "mayThrowEffectsToAbs",
       "memberKeyNameOf",
       "mergeAdjacentFixedViews",
+      "namedTypeNodesForSource",
       "namedTypeTextsForSource",
       "nodeModuleCapability",
       "normPath",

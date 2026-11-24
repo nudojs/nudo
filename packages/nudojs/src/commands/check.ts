@@ -63,6 +63,7 @@ import {
   DIAG,
   defaultExportLocalName,
   importedTypeTextsForSource,
+  namedTypeNodesForSource,
   namedTypeTextsForSource,
   valueTypeTextsForSource,
   type AnnotationEnv,
@@ -840,6 +841,24 @@ function fromCallsiteFiles(opts: RunCheckOptions): FromCallsiteFile[] {
 const annotationEnvMemo = new Map<string, AnnotationEnv>();
 const ANNOTATION_ENV_MEMO_MAX = 32;
 
+/** inline `import("./x").T` 的声明文本表（键 `spec#T`）。 */
+function inlineImportTypesForFile(
+  source: string,
+  filePath: string,
+): ReadonlyMap<string, string> {
+  const out = new Map<string, string>();
+  const re = /import\(\s*["']([^"']+)["']\s*\)\s*\.\s*([A-Za-z_$][\w$]*)/g;
+  for (const m of source.matchAll(re)) {
+    const spec = m[1]!;
+    const name = m[2]!;
+    const loaded = typeAnnotationSourceOf(spec, filePath);
+    if (!loaded) continue;
+    const text = namedTypeTextsForSource(loaded).get(name);
+    if (text !== undefined) out.set(`${spec}#${name}`, text);
+  }
+  return out;
+}
+
 /** 被检查文件的注解环境：同文件声明 + 相对导入 type 声明 + 值引用。 */
 function annotationEnvForFile(source: string, filePath: string): AnnotationEnv {
   const key = `${filePath}\u0000${source}`;
@@ -850,6 +869,8 @@ function annotationEnvForFile(source: string, filePath: string): AnnotationEnv {
   );
   const env: AnnotationEnv = {
     namedTypes: new Map([...imported, ...namedTypeTextsForSource(source)]),
+    namedTypeNodes: namedTypeNodesForSource(source),
+    importTypes: inlineImportTypesForFile(source, filePath),
     valueTypes: valueTypeTextsForSource(source),
   };
   if (annotationEnvMemo.size >= ANNOTATION_ENV_MEMO_MAX) {

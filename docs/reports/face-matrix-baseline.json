@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "note": "构造 × 面矩阵的迁移棘轮：键 = case 名，值 = 已知失败原因码。Phase 2/3 每收敛一个决策就 --update 删对应行。",
+  "cases": {
+    "abstract-accessor": [],
+    "accessor": [],
+    "bigint-literal": [],
+    "call-signature": [],
+    "class-field-annotation": [],
+    "construct-signature": [],
+    "default-export-literal": [],
+    "destructured-default-optional": [],
+    "error-subclass": [],
+    "export-equals": [],
+    "function-expression-return": [],
+    "index-signature": [],
+    "interface-extends": [],
+    "module-marker": [],
+    "namespace-literal": [],
+    "namespace-merge": [],
+    "non-exported-enum": [],
+    "private-method": [],
+    "this-return": [],
+    "tuple-return": [],
+    "typeof-dotted": [],
+    "union-return": [],
+    "utility-type": []
+  }
+}
