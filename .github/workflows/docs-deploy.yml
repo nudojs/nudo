@@ -11,25 +11,30 @@ on:
       - 'README.md'
       - 'package.json'
       - 'pnpm-lock.yaml'
+      # 本 workflow 自身的改动也部署一次，否则结构性修复无法自证可用。
+      - '.github/workflows/docs-deploy.yml'
   workflow_dispatch:
 
 concurrency:
   group: docs-deploy
   cancel-in-progress: false
 
+# 默认最小权限；写 pages / id-token 只在 deploy job。
 permissions:
   contents: read
-  actions: write
-  pages: write
-  id-token: write
 
 jobs:
-  deploy:
-    name: Build & deploy docs
+  # 构建与上传必须和 deploy 分成两个 job：deploy-pages v5 经 artifacts
+  # Twirp 服务列产物，同一 job 内 upload finalize 后立刻 deploy 有已知竞态
+  # （actions/deploy-pages#451：upload 成功、deploy 读到 0 artifact）。
+  # 独立 job 的调度间隔让产物索引先落定，这是官方 starter 的两段式形态。
+  build:
+    name: Build docs
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      # wait-ci-green / gh run download / 清旧 Pages artifact
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -102,25 +107,17 @@ jobs:
         with:
           path: packages/website/build
 
-      # upload-artifact finalize 与 deploy-pages 的 metadata 读取之间，GitHub
-      # API 存在最终一致性窗口：2026-11-25 main 首次失败即 upload 成功后
-      # 16ms 内 deploy 读到 "Found 0 artifact(s)"。这里以 API 可见为准，
-      # 最多等 60s，避免把瞬时索引延迟当成坏产物。
-      - name: Wait for Pages artifact visibility
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          url="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=github-pages"
-          for _ in $(seq 1 12); do
-            count=$(gh api "$url" --jq '[.artifacts[]] | length')
-            if [ "$count" = "1" ]; then
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "github-pages artifact not visible at a unique count after 60s (last count: $count)" >&2
-          exit 1
-
+  deploy:
+    name: Deploy docs
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
