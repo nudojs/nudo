@@ -126,10 +126,9 @@ import {
 } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
 import {
-  absTypeForTsTypeText,
+  absTypeForTsAnnotation,
   entryAbsLiteralSourceOf,
-  namedTypeTextsForSource,
-  resolveNamedTypeText,
+  sameFileAnnotationEnv,
 } from "../../../contract/ts-type-shape.ts";
 import { paramNamesOf, transpileFnBodyStmts } from "./fn-body.ts";
 // Bug 174：形参默认值里的 `this` 判定（声明面与表达式面共用同一实现）
@@ -803,6 +802,9 @@ function emitExpressionStatement(
  *
  * 注解不可映射（具名类 / 泛型实例 …）或无注解 / `const`（不可重赋值）⇒
  * undefined（保持旧行为，不伪造声明域）。
+ *
+ * 注解映射节点优先、文本兜底（`absTypeForTsAnnotation`），两路共用文件级
+ * 注解环境工厂。
  */
 function declaredDomainSourceOf(
   id: unknown,
@@ -810,10 +812,12 @@ function declaredDomainSourceOf(
   opts: TranspileOptions,
 ): string | undefined {
   if (kind === "const") return undefined;
-  const text = (id as { nudoTypeText?: string } | undefined)?.nudoTypeText;
-  if (!text) return undefined;
-  const namedTypes = opts.source ? namedTypeTextsForSource(opts.source) : undefined;
-  return entryAbsLiteralSourceOf(absTypeForTsTypeText(resolveNamedTypeText(text, namedTypes)));
+  const ann = id as { nudoTypeText?: string; nudoTypeNode?: unknown } | undefined;
+  if (!ann?.nudoTypeText && ann?.nudoTypeNode === undefined) return undefined;
+  const env = opts.source ? sameFileAnnotationEnv(opts.source) : undefined;
+  return entryAbsLiteralSourceOf(
+    absTypeForTsAnnotation({ text: ann.nudoTypeText, node: ann.nudoTypeNode }, env, opts.source),
+  );
 }
 
 function emitVariableDeclaration(

@@ -765,7 +765,7 @@ function overlayObjectFnAnnotations(
     });
     let returnType = fn.shape.returnType;
     // 源码返回注解是发布契约：即使观测已有 `unknown` / 窄类型也优先采用
-    // （与 `tsDeclaredReturn` 的 declared-supertype 决议同口径）。
+    // （与 `tsDeclaredReturn` 的「声明可发布 ⇒ 发布声明」决议同口径）。
     if (ann.returnType !== undefined) {
       if (safeValueAnnotation(ann.returnType, surface, refs).unresolved === undefined) {
         const shape = tsAnnotationShape(ann.returnType);

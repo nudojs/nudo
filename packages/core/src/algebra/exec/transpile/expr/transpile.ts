@@ -18,10 +18,9 @@ import { matchReplacement } from "../helpers.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
 import { assertionOpsOf, type NudoAssertionOp } from "../../../../strip-types.ts";
 import {
-  absTypeForTsTypeText,
+  absTypeForTsAnnotation,
   entryAbsLiteralSourceOf,
-  namedTypeTextsForSource,
-  resolveNamedTypeText,
+  sameFileAnnotationEnv,
 } from "../../../contract/ts-type-shape.ts";
 import { tryTranspileOptionalChain } from "./optional-chain.ts";
 import { transpileAtomExpr } from "./atom.ts";
@@ -92,7 +91,7 @@ function transpileAssertionOps(expr: Expression, ops: readonly NudoAssertionOp[]
   } finally {
     assertionEmissionInProgress.delete(expr as object);
   }
-  const namedTypes = opts.source ? namedTypeTextsForSource(opts.source) : undefined;
+  const env = opts.source ? sameFileAnnotationEnv(opts.source) : undefined;
   for (const op of ops) {
     if (op.kind === "nonnull") {
       // 非空断言：剥 null / undefined 臂（既有窄化算子）。
@@ -101,7 +100,7 @@ function transpileAssertionOps(expr: Expression, ops: readonly NudoAssertionOp[]
     }
     // `as T` / `<T>x`：映射不到（具名类 / 泛型实例 / 不可序列化 Abs）⇒ 保留
     // 内层值（与旧解包口径一致，不伪造声明域）。
-    const mapped = absTypeForTsTypeText(resolveNamedTypeText(op.text, namedTypes));
+    const mapped = absTypeForTsAnnotation({ text: op.text, node: op.node }, env, opts.source);
     const literal = entryAbsLiteralSourceOf(mapped);
     if (literal === undefined) continue;
     // 内层仍求值（副作用 / throws 域保留）：声明域取 `$declDomain` 的

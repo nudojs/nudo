@@ -166,7 +166,10 @@ export const SUPPLEMENTARY_ENTRY_FORMS: ReadonlySet<EntryForm> = new Set<EntryFo
 export interface EntryInfo {
   readonly name: EntryId;
   readonly form: EntryForm;
-  /** 入口值的声明节点（函数 / 类 / 对象成员 / 赋值右值；类方法为方法成员节点）。 */
+  /**
+   * 入口值的声明节点（函数 / 类 / 对象成员 / 赋值右值；类方法为方法成员节点，
+   * 同名静态 / 实例并存时取实例；解构绑定取初始化式整体）。
+   */
   readonly node: Node;
   /** 承载该入口的模块顶层语句（Program.body 的直接子节点）。 */
   readonly stmt: Node;
@@ -695,7 +698,7 @@ function buildIndex(file: File): SemanticIndex {
     const memberOf = (key: string): AnyNode => (table.nodes.get(key) ?? decl) as unknown as AnyNode;
     const def: ClassDef = {
       cname, symbolId: ownerId, node: decl, stmt: topStmt,
-      keys: table.keys.map((key) => ({ key, node: memberOf(key) })),
+      keys: [...new Set(table.keys)].map((key) => ({ key, node: memberOf(key) })),
       direct, inNamespace: namespaceDepth > 0, nameListed, methodsListed: false,
     };
     classDefByNode.set(decl, def);
@@ -855,13 +858,20 @@ function buildIndex(file: File): SemanticIndex {
   function visit(node: AnyNode, frame: Frame, parentType: string, parentKey: string): void {
     const type = node.type ?? "";
     const start = startOf(node);
+    // 入口面定位（EntryInfo.stmt / namespace 判据）：所在模块顶层语句
+    // （Program 的直接子节点）；进入 TSModuleDeclaration 子树时深度 +1。
+    // 子树遍历完（含早退路径）还原。
+    const outerStmt = topStmt;
+    const outerDepth = namespaceDepth;
+    if (parentType === "Program") topStmt = node;
+    if (type === "TSModuleDeclaration") namespaceDepth++;
     // 入口面只收**模块顶层**形态。绑定表（symbols / refs / spans / calls）
     // 仍遍历整棵 AST，但函数体内嵌套的 FunctionDeclaration / VariableDeclarator
     // / CJS 赋值不得成为公共入口：否则 check 解析不到该名字 ⇒ 假
     // `nudo:opaque-result`（BUG-1149 / 1159 实测：嵌套 `function g(){}`）。
     const topLevel = frame.uid === root.uid;
     /** 入口面：模块顶层且不在 namespace 体内（见 topStmt / namespaceDepth 注释）。 */
-    const entryLevel = topLevel && namespaceDepth === 0;
+    const entryLevel = topLevel && outerDepth === 0;
 
     if (type === "TSModuleDeclaration") {
       const body = isNode(node.body) ? node.body : undefined;
@@ -885,6 +895,9 @@ function buildIndex(file: File): SemanticIndex {
           }
         }
       }
+      // 早退路径（Identifier 无子节点）同样还原入口面定位
+      topStmt = outerStmt;
+      namespaceDepth = outerDepth;
       return;
     }
 
@@ -915,7 +928,8 @@ function buildIndex(file: File): SemanticIndex {
       });
     }
 
-    // 顶层函数声明无条件进普查面（与 listTopFunctions 同口径，便于对拍）。
+    // 模块顶层的具名函数声明（含 `export function f` / 具名 `export default function f`）；
+    // namespace 体内、函数体内嵌套的声明不在入口层。
     if (entryLevel && type === "FunctionDeclaration" && isNode(node.id)) {
       const nm = nameOf(node.id);
       if (nm) addEntry(nm, "function", node, topStmt);
@@ -1107,10 +1121,6 @@ function buildIndex(file: File): SemanticIndex {
       collectDeclarations(node.body, root);
     }
 
-    const outerStmt = topStmt;
-    const outerDepth = namespaceDepth;
-    if (parentType === "Program") topStmt = node;
-    if (type === "TSModuleDeclaration") namespaceDepth++;
     for (const child of childrenOf(node)) {
       visit(child.node, nextFrame, type, child.key);
     }
@@ -1126,19 +1136,26 @@ function buildIndex(file: File): SemanticIndex {
   const classDefOf = (node: AnyNode | undefined): ClassDef | undefined =>
     isNode(node) ? classDefByNode.get(node) : undefined;
   for (const raw of programBody) {
+    // 只有裸 `class C` 语句与 `const C = class {…}` 绑定算本地类（与旧普查同口径）；
+    // `export class D` 直接由导出面登记，不进这张表。
     if (raw.type === "ClassDeclaration") {
+      const id = raw.id as AnyNode | undefined;
       const def = classDefOf(raw);
-      const nm = nameOf(raw.id);
+      const nm = nameOf(isNode(id) ? id : undefined);
       if (def && nm) localClassByName.set(nm, def);
-    } else if (raw.type === "VariableDeclaration" ||
-        ((raw.type === "ExportNamedDeclaration" || raw.type === "ExportDefaultDeclaration") &&
-          isNode(raw.declaration) && raw.declaration.type === "VariableDeclaration")) {
-      const vd = raw.type === "VariableDeclaration" ? raw : raw.declaration!;
-      for (const d of (vd.declarations ?? []) as AnyNode[]) {
-        if (!isNode(d) || !isNode(d.id) || d.id.type !== "Identifier" || !isNode(d.init) ||
-          d.init.type !== "ClassExpression") continue;
-        const nm = nameOf(d.id);
-        const def = classDefOf(d.init);
+      continue;
+    }
+    const wrapped = raw.type === "ExportNamedDeclaration" || raw.type === "ExportDefaultDeclaration";
+    const vd = wrapped
+      ? (isNode(raw.declaration) && raw.declaration.type === "VariableDeclaration" ? raw.declaration : undefined)
+      : raw.type === "VariableDeclaration" ? raw : undefined;
+    if (!vd) continue;
+    for (const d of (vd.declarations ?? []) as AnyNode[]) {
+      const id = d.id as AnyNode | undefined;
+      const init = d.init as AnyNode | undefined;
+      if (isNode(id) && id.type === "Identifier" && isNode(init) && init.type === "ClassExpression") {
+        const nm = nameOf(id);
+        const def = classDefOf(init);
         if (nm && def && !localClassByName.has(nm)) localClassByName.set(nm, def);
       }
     }
@@ -1229,7 +1246,8 @@ function buildIndex(file: File): SemanticIndex {
     if (!(def.direct || exportedIds.has(def.symbolId) || def.cname === "default")) continue;
     addEntry(def.cname, def.nameListed ? "class" : "class-value", def.node, def.stmt);
     for (const k of def.keys) {
-      addEntry(`${def.cname}.${k.key}`, classMethodFormOf(def, k.node), k.node, def.stmt);
+      const node = instanceMemberOf(def, k.key, k.node);
+      addEntry(`${def.cname}.${k.key}`, classMethodFormOf(def, node), node, def.stmt);
     }
   }
   /** 旧普查面的模块级绑定名（BUG-358 判据）；只在有随声明导出的对象时计算。 */
@@ -1270,6 +1288,20 @@ function buildIndex(file: File): SemanticIndex {
   }
 
   const entries = entryInfos.map((e) => e.name);
+
+  /**
+   * 类入口的值节点：同名静态 / 实例成员并存时取实例（普查面只登记实例方法，
+   * 与 `censusMethodsOf` 同口径）；否则用成员表里的声明节点。
+   */
+  function instanceMemberOf(def: ClassDef, key: string, fallback: AnyNode): AnyNode {
+    const cls = def.node;
+    const classBody = isNode(cls.body) && Array.isArray(cls.body.body) ? cls.body.body : [];
+    for (const m of classBody) {
+      if (!isNode(m) || m.static === true) continue;
+      if (staticKeyOf(m.key, m.computed === true) === key) return m;
+    }
+    return fallback;
+  }
 
   /** 类方法入口键的形态：旧普查面登记 ⇔ 类在触发器名单里，且键是它认的键形态。 */
   function classMethodFormOf(def: ClassDef, member: AnyNode): EntryForm {

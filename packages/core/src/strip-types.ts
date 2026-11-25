@@ -1,4 +1,5 @@
 import type { Node } from "@babel/types";
+import { TS_SIDECAR_KEY } from "./algebra/contract/ts-sidecar-keys.ts";
 
 /**
  * TS 剥除 pass（Babel typescript 插件 AST → 纯 JS AST）。
@@ -1350,10 +1351,10 @@ function deleteTypeSyntaxFields(
       if (texts.length > 0) {
         // 与 nudoTypeText 同口径：旁路字段必须**不可枚举**（AST 深比较 /
         // Babel 打印 / 消费方遍历不得看到引擎私有字段）。
-        setSidecar(node, "nudoTypeArguments", texts);
+        setSidecar(node, TS_SIDECAR_KEY.typeArguments, texts);
       }
     }
-    if (Array.isArray(params)) setSidecar(node, "nudoTypeArgumentNodes", params);
+    if (Array.isArray(params)) setSidecar(node, TS_SIDECAR_KEY.typeArgumentNodes, params);
     delete node.typeArguments;
   }
   const ta = node.typeAnnotation as
@@ -1362,10 +1363,10 @@ function deleteTypeSyntaxFields(
   if (ta && ta.type === "TSTypeAnnotation") {
     // Bug 479：类型注解文本留旁路（形参/变量/类成员的声明类型）
     const text = tsTypeText(source, ta.typeAnnotation);
-    if (text !== undefined) setTypeText(node, "nudoTypeText", text);
+    if (text !== undefined) setTypeText(node, TS_SIDECAR_KEY.typeText, text);
     // 结构面：注解**节点**同时留旁路，供 node→Abs 单点解析直接消费
     // （不经源码文本二次解析）。节点只随当前 AST 生存，不进缓存 / 不序列化。
-    if (ta.typeAnnotation) setSidecar(node, "nudoTypeNode", ta.typeAnnotation);
+    if (ta.typeAnnotation) setSidecar(node, TS_SIDECAR_KEY.typeNode, ta.typeAnnotation);
     delete node.typeAnnotation;
   }
   const rt = node.returnType as
@@ -1382,9 +1383,9 @@ function deleteTypeSyntaxFields(
       rt.type === "TSTypeAnnotation"
         ? tsTypeText(source, rt.typeAnnotation)
         : tsTypeText(source, rt);
-    if (text !== undefined) setTypeText(node, "nudoReturnTypeText", text);
+    if (text !== undefined) setTypeText(node, TS_SIDECAR_KEY.returnTypeText, text);
     const annNode = rt.type === "TSTypeAnnotation" ? rt.typeAnnotation : rt;
-    if (annNode) setSidecar(node, "nudoReturnTypeNode", annNode);
+    if (annNode) setSidecar(node, TS_SIDECAR_KEY.returnTypeNode, annNode);
     delete node.returnType;
   }
   // `a?: T` 的可选标记。只在这些模式节点上删：OptionalMemberExpression 等
@@ -1590,7 +1591,8 @@ function superCallIndex(stmts: unknown[]): number {
 
 /** 断言证据旁路（内层表达式节点上的有序算子表，见 unwrapExpression） */
 export type NudoAssertionOp =
-  | { kind: "as"; text: string }
+  /** `x as T` / `<T>x`：`text` 是类型源码，`node` 是同一类型的 `TSType` 节点。 */
+  | { kind: "as"; text: string; node: unknown }
   | { kind: "nonnull" };
 
 const NUDO_ASSERT_OPS = "nudoAssertOps";
@@ -1624,14 +1626,11 @@ function unwrapExpression(node: Node & Record<string, unknown>, source?: string)
     case "TSTypeAssertion": {
       const inner = node.expression as (Node & Record<string, unknown>) | undefined;
       if (!inner || typeof inner.type !== "string") return null;
-      const ann = node.typeAnnotation as { start?: unknown; end?: unknown } | undefined;
+      const ann = node.typeAnnotation as Node | undefined;
       // `as const` 是冻结声明（不是类型断言）：映射器不认 `const`，别留
       // 无效证据（否则发射面回落解包，行为与本改动前一致）。
-      const text =
-        source && typeof ann?.start === "number" && typeof ann?.end === "number"
-          ? source.slice(ann.start as number, ann.end as number).trim()
-          : undefined;
-      if (text && text !== "const") pushAssertionOp(inner, { kind: "as", text });
+      const text = tsTypeText(source, ann);
+      if (text && text !== "const") pushAssertionOp(inner, { kind: "as", text, node: ann });
       return inner;
     }
     case "TSNonNullExpression": {

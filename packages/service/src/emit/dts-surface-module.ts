@@ -1137,8 +1137,10 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
           "unknown";
         out.push(`function ${name}(${params}): ${ret};`);
       } else {
-        const literal = literalTypeTextOfInit(init);
-        out.push(`const ${name}: ${literal ?? valueTypeTextOfInit(init, source)};`);
+        // **赋值**成员不挂字面量闸门：`f.version = "1.0"` 在 tsc 的 dts 里是
+        // `let version: string`（属性赋值拓宽），只有 `const` 声明才是字面量
+        // 类型（`namespace N { const v = 1 }` ⇒ `const v = 1`）。
+        out.push(`const ${name}: ${valueTypeTextOfInit(init, source)};`);
       }
     }
     return out;

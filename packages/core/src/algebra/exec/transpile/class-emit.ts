@@ -36,13 +36,11 @@ import {
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { transpileFnBodyStmts, emitFnBlockBody, paramNamesOf } from "./stmt.ts";
 import { asyncBodyPlan } from "./async-plan.ts";
+import { TS_SIDECAR_KEYS } from "../../contract/ts-sidecar-keys.ts";
 import {
-  absTypeForTsTypeNode,
-  absTypeForTsTypeText,
+  absTypeForTsAnnotation,
   entryAbsLiteralSourceOf,
-  namedTypeNodesForSource,
-  namedTypeTextsForSource,
-  resolveNamedTypeText,
+  sameFileAnnotationEnv,
 } from "../../contract/ts-type-shape.ts";
 
 /**
@@ -51,6 +49,9 @@ import {
  * `items: number[] = []` 的运行时域必须是**声明域**（arr(number)），
  * 初始化器只作值证据；否则 `this.items` 是空元组，`.map` 折成 `[]`。
  * 注解不可映射 / 无注解 ⇒ undefined（保持旧行为，不伪造）。
+ *
+ * 注解映射**节点优先、文本兜底**（与 `generalize.ts` 入口域同一口径）：
+ * 两路共用文件级注解环境工厂（同文件具名声明 / `typeof` 值表一次解析）。
  */
 function classFieldDeclaredSource(
   mem: { nudoTypeText?: string; nudoTypeNode?: unknown },
@@ -58,22 +59,8 @@ function classFieldDeclaredSource(
 ): string | undefined {
   const text = mem.nudoTypeText;
   if (!text && mem.nudoTypeNode === undefined) return undefined;
-  const named = opts.source ? namedTypeTextsForSource(opts.source) : undefined;
-  const nodeAbs =
-    mem.nudoTypeNode !== undefined
-      ? absTypeForTsTypeNode(
-          mem.nudoTypeNode,
-          {
-            ...(named ? { namedTypes: named } : {}),
-            ...(opts.source ? { namedTypeNodes: namedTypeNodesForSource(opts.source) } : {}),
-          },
-          opts.source,
-        )
-      : undefined;
-  const abs =
-    nodeAbs ??
-    (text ? absTypeForTsTypeText(resolveNamedTypeText(text, named)) : undefined);
-  return abs ? entryAbsLiteralSourceOf(abs) : undefined;
+  const env = opts.source ? sameFileAnnotationEnv(opts.source) : undefined;
+  return entryAbsLiteralSourceOf(absTypeForTsAnnotation({ text, node: mem.nudoTypeNode }, env, opts.source));
 }
 
 /**
@@ -231,14 +218,8 @@ function scopePrivateNames(node: unknown, scope: string): unknown {
   for (const k of Object.keys(src)) out[k] = scopePrivateNames(src[k], scope);
   // 旁路字段是**不可枚举**的，Object.keys 看不见；私有名作用域化是深拷贝，
   // 必须显式搬运，否则类字段 / 返回注解文本在副本里丢失（BUG-414）。
-  for (const k of [
-    "nudoTypeText",
-    "nudoTypeNode",
-    "nudoReturnTypeText",
-    "nudoReturnTypeNode",
-    "nudoTypeArguments",
-    "nudoTypeArgumentNodes",
-  ]) {
+  // 键名单源在 ts-sidecar-keys（与 strip-types 的写入面同一张表）。
+  for (const k of TS_SIDECAR_KEYS) {
     if (!(k in src)) continue;
     Object.defineProperty(out, k, {
       value: src[k],

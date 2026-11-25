@@ -1067,14 +1067,6 @@ export function importedTypesForSource(
   return { namedTexts, namedNodes, inlineTexts, inlineNodes };
 }
 
-/** 跨文件具名类型声明的**文本**表（{@link importedTypesForSource} 的文本面）。 */
-export function importedTypeTextsForSource(
-  source: string,
-  load: (specifier: string) => string | undefined,
-): ReadonlyMap<string, string> {
-  return importedTypesForSource(source, load).namedTexts;
-}
-
 /**
  * 同文件注解环境工厂（core 内消费方的**唯一拼装点**）：具名文本表 + 结构
  * 节点表 + 值类型表，一次调用三张表齐——`TSTypeReference` 臂的节点优先
@@ -2380,6 +2372,21 @@ function tsNodeStringKeys(a: Abs | undefined): string[] | undefined {
 }
 
 /**
+ * 宽键域（mapped type 的键约束不可枚举时）：成员只能是 `string` / `number`
+ * 基类型（可带字面量项）或它们的联合 ⇒ 对应的索引签名键域；其余 undefined。
+ */
+function tsWideKeyOf(a: Abs): Abs | undefined {
+  const members = a.shape.k === "sum" ? a.shape.members : [a];
+  const keys: Abs[] = [];
+  for (const m of members) {
+    const s = m.shape;
+    if (s.k !== "prim" || (s.type !== "string" && s.type !== "number")) return undefined;
+    keys.push(absOf({ k: "prim", type: s.type }));
+  }
+  return keys.length > 0 ? joinAbsList(keys) : undefined;
+}
+
+/**
  * 元组节点（含标签 / 可选 / rest）→ Abs。
  *
  * - **rest 位**：`...T[]` 的元素域进 `rest`（位置前缀保住：`[number, ...string[]]`
@@ -2672,33 +2679,48 @@ function mapTsTypeNode(
     }
     case "TSMappedType": {
       const constraint = mapTsTypeNode(node.constraint, source, allowNullish);
-      const keys = tsNodeStringKeys(constraint);
       const valueNode = node.typeAnnotation;
-      if (!keys || !valueNode) return undefined;
+      if (!constraint || !valueNode) return undefined;
+      // 可枚举键集 → 逐键成员；宽键约束（`{ [K in string]: number }`）不可枚举，
+      // 与索引签名同域（键名作为类型参数绑定为宽键域本身，不是字面量）。
+      const keys = tsNodeStringKeys(constraint);
+      const bound: Array<{ slot: string | undefined; key: Abs }> = [];
+      if (keys) {
+        for (const key of keys) {
+          bound.push({
+            slot: key,
+            key: abs({ k: "prim", type: "string" }, { op: "lit", value: key }, undefined, "exact"),
+          });
+        }
+      } else {
+        const wide = tsWideKeyOf(constraint);
+        if (!wide) return undefined;
+        bound.push({ slot: undefined, key: wide });
+      }
       const optional = node.optional === true || node.optional === "+";
       const readonly = node.readonly === true || node.readonly === "+";
       const slots: Extract<Shape, { k: "obj" }>["slots"] = {};
+      let index: Extract<Shape, { k: "obj" }>["index"];
       const prev = activeAnnotationEnv;
       try {
-        for (const key of keys) {
-          // 键名作为字符串字面量类型参数绑定进值类型的解析环境。
-          const typeParams = new Map([
-            ...(prev?.typeParams ?? []),
-            [node.key.name, abs({ k: "prim", type: "string" }, { op: "lit", value: key }, undefined, "exact")],
-          ]);
+        for (const b of bound) {
+          const typeParams = new Map([...(prev?.typeParams ?? []), [node.key.name, b.key]]);
           activeAnnotationEnv = { ...prev, typeParams };
           const value = mapTsTypeNode(valueNode, source, allowNullish);
           if (!value) return undefined;
-          slots[key] = {
-            value,
-            ...(optional ? { optional: true } : {}),
-            ...(readonly ? { readonly: true } : {}),
-          };
+          if (b.slot === undefined) index = { key: b.key, value };
+          else {
+            slots[b.slot] = {
+              value,
+              ...(optional ? { optional: true } : {}),
+              ...(readonly ? { readonly: true } : {}),
+            };
+          }
         }
       } finally {
         activeAnnotationEnv = prev;
       }
-      return absOf({ k: "obj", slots, open: true });
+      return absOf({ k: "obj", slots, open: true, ...(index ? { index } : {}) });
     }
     case "TSTypePredicate":
       return absOf({ k: "prim", type: "boolean" });
@@ -2714,8 +2736,10 @@ function mapTsTypeNode(
       return undefined;
     default: {
       // Babel 新增一个 TSType 种类 ⇒ 这里编译红，必须显式决定映射与否。
+      // 运行期（合成节点 / 其它解析器产物的未知种类）与「明确不支持」同归 undefined。
       const unhandled: never = node;
-      return unhandled;
+      void unhandled;
+      return undefined;
     }
   }
 }
@@ -2735,6 +2759,53 @@ export function absTypeForTsTypeNode(
   const n = tsTypeAnnotationOf(node);
   if (!n) return undefined;
   return withAnnotationEnv(env, () => mapTsTypeNode(n, source, true));
+}
+
+/**
+ * 类型文本 → **类型注解节点**（结构面映射 `absTypeForTsTypeNode` 的语料 helper）。
+ *
+ * 把一段类型文本解析成 `type __t = <text>;`（`pos === "return"` 时
+ * `declare function __f(x): <text>;`，取返回注解——类型谓词 / `asserts` 只在
+ * 返回位合法），返回注解节点与它的宿主源码（节点面带实参引用回落文本时按
+ * `source` 切片，必须传同一份）。解析失败 / 没有注解 ⇒ `node: undefined`。
+ */
+export function tsTypeNodeOfText(
+  text: string,
+  pos?: "return",
+): { node: TsTypeAstNode | undefined; source: string } {
+  const source =
+    pos === "return" ? `declare function __f(x): ${text};` : `type __t = ${text};`;
+  let last: Record<string, unknown> | undefined;
+  try {
+    const ast = parseSource(source, { keepTs: true }) as unknown as {
+      program: { body: Record<string, unknown>[] };
+    };
+    last = ast.program.body.at(-1);
+  } catch {
+    return { node: undefined, source };
+  }
+  const target =
+    pos === "return" ? (last as { returnType?: unknown } | undefined)?.returnType : last;
+  const node = tsTypeAnnotationOf(target);
+  return { node, source };
+}
+
+/**
+ * 旁路注解 → Abs 的**单一消费口径**：节点优先（`nudoTypeNode` /
+ * `nudoReturnTypeNode` 旁路），文本兜底（`nudoTypeText` / `nudoReturnTypeText`）。
+ *
+ * 剥除 pass 把同一份注解同时留成节点与文本两个旁路；AST 上的注解消费方
+ * （入口域 / 类字段声明域 / 局部声明域 / 断言 / 函数表达式签名）一律经这里，
+ * 「节点 ?? 文本」的优先序只存在于这一处。两路共用调用方的注解环境
+ * （{@link sameFileAnnotationEnv} 工厂）。
+ */
+export function absTypeForTsAnnotation(
+  ann: { text?: string | undefined; node?: unknown } | undefined,
+  env?: AnnotationEnvArg,
+  source?: string,
+): Abs | undefined {
+  if (!ann) return undefined;
+  return absTypeForTsTypeNode(ann.node, env, source) ?? absTypeForTsTypeText(ann.text, env);
 }
 
 /**

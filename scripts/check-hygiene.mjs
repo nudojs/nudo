@@ -140,6 +140,21 @@ const twinRules = [
     allow: "packages/service/src/emit/dts-type.ts",
     msg: "second dts type renderer — use renderDtsType",
   },
+  {
+    pattern: /\bfunction\s+sameFileAnnotationEnv\s*\(/,
+    allow: "packages/core/src/algebra/contract/ts-type-shape.ts",
+    msg: "second same-file annotation env assembly — use core sameFileAnnotationEnv",
+  },
+  {
+    pattern: /\bfunction\s+annotationEnvForFile\s*\(/,
+    allow: "packages/service/src/ts-annotation.ts",
+    msg: "second file annotation env assembly — use service annotationEnvForFile",
+  },
+  {
+    pattern: /\bfunction\s+importedTypesForSource\s*\(/,
+    allow: "packages/core/src/algebra/contract/ts-type-shape.ts",
+    msg: "second imported-type table scanner — extend importedTypesForSource",
+  },
 ];
 for (const rel of files) {
   const src = readFileSync(join(repoRoot, rel), "utf8");

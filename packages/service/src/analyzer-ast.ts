@@ -116,22 +116,17 @@ export function extractParamNames(node: Node): string[] {
 }
 
 /**
- * 「第三种」：读回 `strip-types.ts` 写在函数节点上的**返回类型注解原文**
- * （不可枚举旁路 `nudoReturnTypeText`，与形参的 `nudoTypeText` 同源）。
+ * 读回 `strip-types.ts` 剥除类型时写在函数节点上的**返回类型注解原文**
+ * （旁路 `nudoReturnTypeText`，与形参的 `nudoTypeText` 同源）。
  *
- * 只做透传：声明是断言、实现是事实，一致性校验在 dts 投影面进行，
- * **绝不用声明覆盖观测产物**。`.js` 源 / 未标注 ⇒ undefined ⇒ 零影响。
+ * 只做透传（分析面不解析类型）：发布决议在 dts 投影面进行——有声明按声明
+ * 发布，见 `FunctionAnalysis.declaredReturnType`。`.js` 源 / 未标注 ⇒
+ * undefined ⇒ 零影响。
  */
 export function extractReturnAnnotation(node: Node): string | undefined {
   const fn = node.type === "ExportDefaultDeclaration" ? node.declaration : node;
   const t = (fn as unknown as { nudoReturnTypeText?: string }).nudoReturnTypeText;
   return typeof t === "string" && t.length > 0 ? t : undefined;
-}
-
-/** 返回注解**节点**旁路（与文本同源；node→Abs 单点解析的输入）。 */
-export function extractReturnAnnotationNode(node: Node): unknown {
-  const fn = node.type === "ExportDefaultDeclaration" ? node.declaration : node;
-  return (fn as unknown as { nudoReturnTypeNode?: unknown }).nudoReturnTypeNode;
 }
 
 export function resolveFunctionNode(node: Node): Node {

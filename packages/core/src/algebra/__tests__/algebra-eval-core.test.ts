@@ -3600,7 +3600,7 @@ type Alias = Admin;
     const imported = absTypeForTsTypeNode(
       {
         type: "TSImportType",
-        argument: { type: "StringLiteral", value: "./types" },
+        source: { type: "StringLiteral", value: "./types" },
         qualifier: { type: "Identifier", name: "User" },
       },
       { importTypes: new Map([["./types#User", "{ name: string }"]]) },

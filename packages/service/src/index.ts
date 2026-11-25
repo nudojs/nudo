@@ -303,4 +303,7 @@ export { parseIgnoreThrows, configIgnoreThrows } from "./gate-config.ts";
 export { normalizeRealPath } from "./normalize-path.ts";
 export { writeFileAtomic } from "./write-atomic.ts";
 export { typeAnnotationSourceOf } from "./type-annotation-resolve.ts";
+// 文件级注解环境工厂（跨文件导入表 + 同文件声明 / 值表）：nudojs check 与
+// service 分析面共用同一拼装点，被导入类型文件变更按签名失效。
+export { annotationEnvForFile } from "./ts-annotation.ts";
 export { SYNTAX_ERROR_CODE, USAGE_ERROR_CODE } from "./protocol-codes.ts";

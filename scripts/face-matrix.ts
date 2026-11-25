@@ -149,6 +149,8 @@ export function f(): { [k: string]: number } { return { a: 1 }; }
 export function r(): { readonly a: number } { return { a: 1 }; }` },
   { name: "promise-void-return", dts: ["v(): Promise<void>;"],
     src: `export async function v(): Promise<void> { return; }` },
+  { name: "generator-void-return", dts: ["gen(): Generator<number, void, unknown>;"],
+    src: `export function* gen(): Generator<number, void, unknown> { yield 1; return; }` },
   { name: "namespace-merge-value", dts: ["function f(): number;", "const b", "function g(): string;"],
     src: `export namespace N {
   export function f(): number { return 1; }

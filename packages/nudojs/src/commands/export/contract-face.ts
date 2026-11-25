@@ -490,7 +490,8 @@ export function unifiedReturnFace(
  * 契约返回面（**已复核**）：dts / standard 面消费。
  *
  * - 有返回契约且实现满足它 ⇒ 契约返回 Abs（async 时保留 `promise<…>` 包装）；
- * - 实现违约 ⇒ undefined（**不投影**契约；调用方回落观测面，Bug 626）；
+ * - 实现违约 ⇒ undefined（**不投影**契约；调用方与 `unifiedReturnFace` 同序
+ *   下退：契约域种子重算 > 声明返回面 > 观测面，Bug 626）；
  * - 无返回契约 ⇒ undefined。
  */
 export function effectiveContractReturnFace(

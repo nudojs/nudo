@@ -53,10 +53,9 @@ import { asyncBodyPlan } from "../async-plan.ts";
 import { classSpecOf } from "../class-emit.ts";
 import { abs } from "../../../abs.ts";
 import {
-  absTypeForTsTypeText,
+  absTypeForTsAnnotation,
   entryAbsLiteralSourceOf,
-  namedTypeTextsForSource,
-  resolveNamedTypeText,
+  sameFileAnnotationEnv,
 } from "../../../contract/ts-type-shape.ts";
 /** 参数模式名集（var 提升边界扣除）——stmt.ts paramNamesOf 的 expr 侧副本 */
 export function paramNamesOfFn(params: Node[]): ReadonlySet<string> {
@@ -71,33 +70,20 @@ export function paramNamesOfFn(params: Node[]): ReadonlySet<string> {
  * 先前所有 `$fnVal` 出口都不带签名 ⇒ 返回 / 值位置的箭头 / 匿名函数在 dts
  * 里只剩 `(x: unknown) => unknown`。这里从剥除旁路读回形参 / 返回注解，
  * 序列化成 Abs 源码拼进 opts；无注解的位置用 `any`（与入口未约束参同口径）。
+ *
+ * 注解映射节点优先、文本兜底（`absTypeForTsAnnotation`），两路共用文件级
+ * 注解环境工厂。
  */
 function fnTypeOptsSrc(
-  fn: { params?: Node[]; nudoReturnTypeText?: string },
+  fn: { params?: Node[]; nudoReturnTypeText?: string; nudoReturnTypeNode?: unknown },
   opts: TranspileOptions,
 ): string {
-  const named = opts.source ? namedTypeTextsForSource(opts.source) : undefined;
+  const env = opts.source ? sameFileAnnotationEnv(opts.source) : undefined;
   const params = fn.params ?? [];
   const parts: string[] = [];
   let anyParam = false;
   for (const p of params) {
-    const raw = p as {
-      type?: string;
-      nudoTypeText?: string;
-      left?: Node;
-      argument?: Node;
-    };
-    const text =
-      raw.nudoTypeText ??
-      (raw.type === "AssignmentPattern"
-        ? (raw.left as { nudoTypeText?: string } | undefined)?.nudoTypeText
-        : undefined) ??
-      (raw.type === "RestElement"
-        ? (raw.argument as { nudoTypeText?: string } | undefined)?.nudoTypeText
-        : undefined);
-    const mapped = text
-      ? absTypeForTsTypeText(resolveNamedTypeText(text, named))
-      : undefined;
+    const mapped = absTypeForTsAnnotation(paramAnnotationOf(p), env, opts.source);
     const src = mapped ? entryAbsLiteralSourceOf(mapped) : undefined;
     if (src !== undefined) {
       parts.push(src);
@@ -106,15 +92,37 @@ function fnTypeOptsSrc(
       parts.push(entryAbsLiteralSourceOf(abs({ k: "any" }, undefined, undefined, "path")) ?? "undefined");
     }
   }
-  const retText = fn.nudoReturnTypeText;
-  const retAbs = retText
-    ? absTypeForTsTypeText(resolveNamedTypeText(retText, named))
-    : undefined;
+  const retAbs = absTypeForTsAnnotation(
+    { text: fn.nudoReturnTypeText, node: fn.nudoReturnTypeNode },
+    env,
+    opts.source,
+  );
   const retSrc = retAbs ? entryAbsLiteralSourceOf(retAbs) : undefined;
   if (!anyParam && retSrc === undefined) return "";
   return `${anyParam ? `paramTypes: [${parts.join(", ")}], ` : ""}${
     retSrc !== undefined ? `returnType: ${retSrc}, ` : ""
   }`;
+}
+
+/**
+ * 形参节点上的注解旁路（文本 + 节点成对）。带默认值 / rest 的形参，注解挂在
+ * 左值 / 被装饰节点上（`(x: number = 1)` ⇒ `x`；`(...xs: number[])` ⇒ `xs`）。
+ */
+function paramAnnotationOf(p: Node): { text: string | undefined; node: unknown } {
+  const raw = p as {
+    type?: string;
+    nudoTypeText?: string;
+    nudoTypeNode?: unknown;
+    left?: Node;
+    argument?: Node;
+  };
+  const carrier = (
+    raw.type === "AssignmentPattern" ? raw.left : raw.type === "RestElement" ? raw.argument : undefined
+  ) as { nudoTypeText?: string; nudoTypeNode?: unknown } | undefined;
+  return {
+    text: raw.nudoTypeText ?? carrier?.nudoTypeText,
+    node: raw.nudoTypeNode ?? carrier?.nudoTypeNode,
+  };
 }
 
 /**

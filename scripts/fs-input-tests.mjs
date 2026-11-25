@@ -13,6 +13,7 @@ export const FS_INPUT_TARGETS = [
   "packages/website/tests",
   "packages/core/src/algebra/__tests__/check-mini-repo.test.ts",
   "packages/env/src/__tests__/env-node-surface-oracle.test.ts",
+  "packages/service/src/__tests__/entry-census-parity.test.ts",
 ];
 
 /** @param {string} rel repo-relative path */

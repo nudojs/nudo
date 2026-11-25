@@ -575,7 +575,7 @@ export function scanClassSurface(
         // BUG-156（注解档）：源码**有**返回注解时，注解本身就是 `check` 签名面
         // 发布的那条类型 —— 求值面把 `this.<字段>` 播种成 any 得到的宽域
         // （`number | string`）不该盖过它。与形参位同一「可解析」判据；发射侧
-        // 只收窄不放宽（`refineObservedReturn`），注解对不上观测时原样保留。
+        // 有注解即发布注解（`refineObservedReturn`），不作收窄/放宽的选择。
         const evidence = safeFieldTypeAnnotation(returnType, resolvableInMethod);
         if (evidence !== undefined) entry.annotationReturnType = evidence;
       }
@@ -613,7 +613,7 @@ export function scanClassSurface(
   // 就写在同一份产物里，同次 `check` / `tsc --declaration` 都是 `number`。
   // 这里只做**声明面**能确定的一件事：按源码注解（字段 / 形参）与字面量给
   // 单个 `return` 表达式定型（算术 / 模板 / 比较而已，不做调用推断）。
-  // 发射侧**只收窄不放宽**（见 `refineObservedReturn`）。
+  // 发射侧**有注解即发布注解**（见 `refineObservedReturn`）。
   for (const m of pendingAnnotationReturns) {
     const inferred = annotationReturnTypeOf(m.fn, m.paramNames, m.paramTypes, false);
     if (inferred !== undefined) m.entry.annotationReturnType = inferred;
