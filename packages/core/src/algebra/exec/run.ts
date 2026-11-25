@@ -45,7 +45,7 @@ import { HOST_INTRINSIC_NAMES, HOST_INTRINSIC_SET } from "./transpile/intrinsics
 import { NAMESPACE_GLOBALS } from "./runtime/containers.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
 import { drainClassCollisions, beginClassEpoch } from "./class-registry.ts";
-import { registerLiveImportRefresh, refreshLiveImports } from "./live-imports.ts";
+import { noteModuleEntry, registerLiveImportRefresh, refreshLiveImports } from "./live-imports.ts";
 import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros, errorBrandAbs } from "../builtins.ts";
 import { sourceHasCjsExports, sourceHasEsmSyntax, sourceIsStrict } from "../format/code-text.ts";
@@ -1186,6 +1186,23 @@ export function isAbsVal(v: unknown): v is Abs {
  *  #152 assume 前提不设选项位：播种统一走 withAssumePremises 动态域
  *  包裹（check.ts 的 runSeeded extent），单一机制无第二路径。 */
 export function callTranspiledExportFull(
+  exports: Record<string, unknown>,
+  name: string,
+  args: Abs[],
+  opts?: { phi?: Phi; shareArgs?: boolean; preferLocal?: boolean; thisArg?: Abs },
+): TranspiledCallResult {
+  // 跨模块导出入口 = 唯一能变异模块状态的通道（见 live-imports.ts 纪元说明）。
+  // 入口先记一次（入口刷新对齐被调方的 import 绑定），返回后再记一次：
+  // 本次调用期间发生的模块级变异要由**调用方**出口的 refresh 重读进绑定。
+  noteModuleEntry();
+  try {
+    return callTranspiledExportFullBody(exports, name, args, opts);
+  } finally {
+    noteModuleEntry();
+  }
+}
+
+function callTranspiledExportFullBody(
   exports: Record<string, unknown>,
   name: string,
   args: Abs[],

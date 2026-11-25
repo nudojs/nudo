@@ -35,9 +35,32 @@ export function registerLiveImportRefresh(fn: () => void): void {
   refreshers.push(new WeakRef(fn));
 }
 
+/**
+ * 模块入口纪元：只在**进入模块导出函数**（可能变异模块状态）时递增。
+ *
+ * `$call` 出口在每个调用边界都会触发 refresh；一次导出调用内部可能有成百上千
+ * 个嵌套 $call（迭代回调 / 数组方法 / 局部函数）。若每个 $call 都重绑全部
+ * 存活模块的 import 绑定，成本 = 调用数 × 模块数（OSS semver 实测 16k 次
+ * $call × 260 模块、65M 次 bindImport ≈ 6s）。但模块状态只能经**跨模块导出
+ * 调用**变异：局部函数拿不到别的模块的导出绑定写权限（import 绑定赋值是
+ * TypeError），本地函数对自身模块导出的写必在某个导出入口的调用栈内才对外
+ * 可见。故 refresh 只需在「上次 refresh 之后有过模块入口」时执行；期间的重绑
+ * 都是同值重放（纯读），跳过不改变可观察值。
+ */
+let moduleEntryEpoch = 0;
+let refreshedEpoch = -1;
+
+/** 跨模块导出调用入口（run.ts callTranspiledExportFull）：标记模块状态可能已变 */
+export function noteModuleEntry(): void {
+  moduleEntryEpoch++;
+}
+
 /** 调用边界触发：全部**存活**模块的 import 绑定重读依赖当前导出值 */
 export function refreshLiveImports(): void {
   if (refreshers.length === 0) return;
+  // 上次 refresh 后没有任何模块入口 ⇒ 重绑只会把同样的值再写一遍。
+  if (moduleEntryEpoch === refreshedEpoch) return;
+  refreshedEpoch = moduleEntryEpoch;
   let keep = 0;
   for (let i = 0; i < refreshers.length; i++) {
     const ref = refreshers[i]!;
