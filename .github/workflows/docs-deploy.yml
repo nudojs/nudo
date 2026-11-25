@@ -19,7 +19,7 @@ concurrency:
 
 permissions:
   contents: read
-  actions: read
+  actions: write
   pages: write
   id-token: write
 
@@ -80,10 +80,46 @@ jobs:
       # agent 面（每页 .md + llms-full.txt）由 website 的 `postbuild` 生成——
       # 与本地 `pnpm run docs:build` 同一条链路，CI 无需重复执行。
 
+      # 重跑同一 run 会再上传一个同名 github-pages artifact；deploy-pages
+      # 见到多个同名 artifact 直接失败（GitHub API 也不保证返回最新）。
+      # 先删本 run 的旧 artifact，保证重跑幂等——否则一次瞬时失败后重跑
+      # 永远卡在 "Multiple artifacts named github-pages"。
+      - name: Drop stale Pages artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=github-pages" \
+            --jq '.artifacts[].id' |
+          while read -r id; do
+            if [ -n "$id" ]; then
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"
+            fi
+          done
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: packages/website/build
+
+      # upload-artifact finalize 与 deploy-pages 的 metadata 读取之间，GitHub
+      # API 存在最终一致性窗口：2026-11-25 main 首次失败即 upload 成功后
+      # 16ms 内 deploy 读到 "Found 0 artifact(s)"。这里以 API 可见为准，
+      # 最多等 60s，避免把瞬时索引延迟当成坏产物。
+      - name: Wait for Pages artifact visibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=github-pages"
+          for _ in $(seq 1 12); do
+            count=$(gh api "$url" --jq '[.artifacts[]] | length')
+            if [ "$count" = "1" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "github-pages artifact not visible at a unique count after 60s (last count: $count)" >&2
+          exit 1
 
       - name: Deploy to GitHub Pages
         id: deployment
