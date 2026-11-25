@@ -1,5 +1,26 @@
 # nudojs
 
+## 1.9.7
+
+### Patch Changes
+
+- bd5a0a7: Annotation mapping, entry census and declared returns each have one decision point; dts and validator faces agree.
+  
+  - `@nudojs/core`: source-AST type annotations are mapped by the `TSType` node fold. The fold is exhaustive over Babel's `TSType` kinds (a new kind is a compile error; unsupported kinds return `undefined` instead of falling back to the text grammar). Mapped types (enumerable and wide key domains), `keyof` / indexed access / labeled-optional-rest tuples / type predicates / dotted `typeof` paths / inline `import("spec").T` / interface `extends` / utility types (`Partial` `Required` `Readonly` `Pick` `Omit`) map structurally. Imported declarations carry their nodes across files, so a construct maps identically within and across modules, and parameterised builtins (`Array<T>` `ReadonlyArray<T>` `Map<K,V>` `Set<T>` `WeakMap` `WeakSet` `Promise<T>` `Record<K,V>` …) keep their arguments.
+  - `@nudojs/core`: one annotation-environment assembly point (`sameFileAnnotationEnv`) and one imported-type scanner (`importedTypesForSource`: text and node tables). A text-vs-node parity ratchet pins every construct (a new divergence fails; the baseline only holds "node more precise" entries).
+  - `@nudojs/core`: fixes `nudo check` crashing with `Converting circular structure to JSON` on annotations such as `Map<string, Set<string>>` or recursive types with `Map` values.
+  - `@nudojs/service`: `annotationEnvForFile` is the only file-level annotation environment (same-file declarations, relative imports, inline imports); edits to imported files invalidate it by stat signature instead of serving a stale table.
+  - `@nudojs/service` / `nudojs`: a declared return annotation is the published contract. The dts signature publishes it whenever its type names resolve in the product module (the `tsc --declaration` answer), and the guard / standard / zod return faces validate the same domain. Unresolvable names fall back to the observed type with a `nudo:dropped-type-annotation` ledger line; declaration-vs-observation conflicts keep a `nudo:return-annotation-mismatch` note without changing the published type. The former shape whitelist and the covariant observed/declared choice are gone.
+  - `@nudojs/core` / `@nudojs/service` / `nudojs` / `@nudojs/lsp`: the entry census is a single fact on `SemanticIndex` (names plus node-bearing entry infos). `nudo check` no longer scans a second legacy census, the service analyzer reads the same index, and LSP import binding / export definition read it too.
+  - other carried fixes: `FormalParam.tsTypeNode` / `FunctionAnalysis.declaredReturnAbs` carry declaration evidence; class field declarations seed `$declDomain`; function expressions carry `paramTypes` / `returnType`; `$copy` transports `Abs.facets` for every shape; class surfaces keep `#private;` and `abstract` accessors; module dts projection appends `export {};` when it has no other module marker; overload export glue keeps alias/default extras; ambient `declare function` + `export =` emits the glue line; same-name namespace blocks merge members (including ambient implicit exports); non-exported enums referenced by public signatures are emitted module-locally; bigint literal terms render as `10n`.
+- Updated dependencies [0d32f39]
+- Updated dependencies [bd5a0a7]
+  - @nudojs/core@1.21.0
+  - @nudojs/service@1.13.0
+  - @nudojs/env@0.5.15
+  - @nudojs/harvester@0.6.7
+  - @nudojs/parser@1.5.15
+
 ## 1.9.6
 
 ### Patch Changes
