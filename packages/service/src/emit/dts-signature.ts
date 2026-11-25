@@ -15,7 +15,7 @@ import {
   substAbs,
   termEquals,
 } from "@nudojs/core";
-import { absTypeForTsTypeText, isJsBindingIdent } from "@nudojs/core/internal";
+import { isJsBindingIdent, sanitizeCommentText } from "@nudojs/core/internal";
 import type { AnalysisResult, CaseResult, FunctionAnalysis } from "../analyzer.ts";
 import { absToTSTypeIr } from "./dts-context.ts";
 import { BUILTIN_GENERIC_BRANDS } from "./dts-type.ts";
@@ -37,12 +37,10 @@ import {
   splitTopLevel,
   typeParamNamesInClause,
 } from "./dts-text.ts";
-import {
-  widenParamAbs,
-  widenReturnAbs,
-  widenTopLevelAbs,
-} from "./dts-widen.ts";
+import { widenTopLevelAbs } from "./abs-widen.ts";
+import { widenParamAbs, widenReturnAbs } from "./dts-widen.ts";
 import { isNoInfoType } from "./dts-type-text.ts";
+import { brandScopeOf } from "./dts-brand-scope.ts";
 import { domainEvidenceCases } from "./domain-cases.ts";
 import { tsAnnotationShape, tsAnnotationTypeText } from "../ts-annotation.ts";
 import type { DtsModuleSurface } from "./dts-ir.ts";
@@ -111,79 +109,6 @@ export function predLiteralSet(p: Pred | undefined, self: Term): LiteralValue[] 
  * 原文仍可能是 `any` ⇒ 两者都算「不携带外延」，不能当作更精确的证据。
  */
 
-
-/**
- * BUG-176：观测**联合**里含 `unknown` / `any` 成员时整串无信息。
- *
- * TS 里 `unknown` / `any` 吸收联合的其它成员（`unknown | number` ≡ `unknown`，
- * `any | string` ≡ `any`）⇒ 声明返回注解仍是唯一可用的证据。旧的 `isNoInfoType`
- * 只认整串等于 `unknown`/`any`，`hasMethod` 的观测串 `unknown | number` 因此
- * 挡住了声明注解 `: number`（产物返回位比 tsc 宽）。
- */
-export function isNoInfoObservedType(ts: string): boolean {
-  if (isNoInfoType(ts)) return true;
-  const members = splitTopLevel(ts, "|").map((m) => m.trim());
-  return members.length > 1 && members.some((m) => isNoInfoType(m));
-}
-
-/** 观测串是内建泛型的**占位**形态（`Map<unknown, unknown>` 等，BUG-254）。 */
-const PLACEHOLDER_BUILTIN_TYPES: ReadonlySet<string> = new Set(
-  BUILTIN_GENERIC_BRANDS.values(),
-);
-export function isPlaceholderBuiltinType(ts: string): boolean {
-  const t = ts.trim();
-  if (PLACEHOLDER_BUILTIN_TYPES.has(t)) return true;
-  return /^(?:Readonly|Weak)?(?:Map|Set|Array|Promise|Generator|Iterator|Iterable)[A-Za-z]*<(?:unknown|object)(?:,\s*(?:unknown|object))?>$/.test(
-    t,
-  );
-}
-
-/** 顶层成员里是否出现 `readonly` 前缀（`readonly T[]` / `readonly [A, B]`）。 */
-export function hasReadonlyTypePrefix(text: string): boolean {
-  return splitTopLevel(text, "|").some((m) => /^readonly\s+/.test(m.trim()));
-}
-
-/** 声明类型文本是否函数类型（`() => number` / `(b: number) => string`）。 */
-export function isFunctionTypeText(text: string): boolean {
-  return tsAnnotationShape(text)?.k === "fn";
-}
-
-/**
- * BUG-245：注解引用了 **lib 全局纯类型名**（Abs 无法表达）。这些名字是声明
- * 面事实，观测（`null | [string] & {…}` / `Promise<{…}>`）只能给结构近似
- * ⇒ 返回位必须保留声明注解。
- */
-const LIB_GLOBAL_TYPE_NAMES: ReadonlySet<string> = new Set([
-  "IArguments",
-  "CallableFunction",
-  "NewableFunction",
-  "RegExpMatchArray",
-  "RegExpExecArray",
-  "PromiseSettledResult",
-  "PromiseFulfilledResult",
-  "PromiseRejectedResult",
-  "Disposable",
-  "AsyncDisposable",
-  "DisposableStack",
-  "AsyncDisposableStack",
-  "SuppressedError",
-]);
-export function hasLibGlobalTypeText(text: string): boolean {
-  return annotationTypeRefs(text).some((n) => LIB_GLOBAL_TYPE_NAMES.has(n));
-}
-
-/** 联合成员里是否有**字面量类型**（`"a"` / `42` / `true` / `10n`）。 */
-export function hasLiteralTypeText(text: string): boolean {
-  return splitTopLevel(text, "|").some((raw) => {
-    const m = raw.trim();
-    return (
-      /^["'`]/.test(m) ||
-      /^-?(?:\d+(?:\.\d+)?|\d[\d_]*)(?:n)?$/.test(m) ||
-      m === "true" ||
-      m === "false"
-    );
-  });
-}
 
 /** JS 字面量值 → TS 类型字面量（`42` / `"s"` / `true` / `null` / `undefined`） */
 export function tsLiteralType(v: LiteralValue): string {
@@ -359,7 +284,7 @@ export type DtsProjectionCtx = {
   typeRefs?: Set<string>;
   /** 被丢弃的注解（引用了产物里不可解析的类型名）——台账用 */
   dropped?: string[];
-  /** 「第三种」：返回注解与观测元素域冲突（只落台账，产物恒用观测口径） */
+  /** 「第三种」：返回注解与观测冲突（只落台账，产物发布声明） */
   mismatches?: Array<{ name: string; declared: string; observed: string }>;
   /** Bug 57：查 `surface.typeParamClauses` 用的普查名（类成员是 `C.m`） */
   typeParamKey?: string;
@@ -1022,8 +947,10 @@ export function computeMainSignature(
     // rest 位不可选（TS：剩余参数不能带 `?`）；解构位不可选（TS：绑定模式
     // 参数不能带 `?`）——**但**未绑定展开时渲染名是求值占位（`_p0`，普通
     // 标识符），此时可省性可以表达（BUG-107：`{ a } = {}` ⇒ `_p0?: any`）。
+    // BUG-420：`.d.ts` 的**声明**签名允许 `{ a }?: T`（实现签名才禁止
+    // 绑定模式带 `?`）。有默认值即可省，与绑定是否被契约/观测覆盖无关。
     const patternOptional =
-      decl?.isPattern === true && decl.hasDefault === true && !boundCovered;
+      decl?.isPattern === true && decl.hasDefault === true;
     const optional =
       isRest
         ? false
@@ -1073,12 +1000,9 @@ export function computeMainSignature(
   // BUG-134：类型谓词 / 断言签名是**返回位的类型**（声明级证据）⇒ 优先于
   // 观测面（观测只能给 `boolean` / `undefined`）；手写契约返回位仍是最高优先。
   const predicateReturn = contract?.return ? undefined : tsReturnPredicate(fn, ctx);
-  // BUG-192/196/206：声明注解只在**观测无信息**（inference 失败 / 必抛）或
-  // 该维度无法用 Abs 表达（`void`）时接棒——「声明 vs 观测冲突 ⇒ 保留观测」
-  // 是既有裁定（只落台账），这里不翻转它。
-  const declaredReturn = contract?.return
-    ? undefined
-    : tsDeclaredReturn(fn, observedReturnType, ctx, retAbs);
+  // 返回位有声明注解 ⇒ 发布声明（`tsDeclaredReturn`）；类型名在产物里不可解析
+  // 时它已落 dropped 台账并返回 undefined ⇒ 回落下面的观测 / HOF 面。
+  const declaredReturn = contract?.return ? undefined : tsDeclaredReturn(fn, ctx);
   const returnType =
     contract?.return
       ? contractReturnTSType(contract.return, typeVars)
@@ -1280,14 +1204,15 @@ export function computeHofSignature(
   // 返回位证据优先级（BUG-192）：声明注解 > 回调形参注解的 β 求解 > HOF 符号面。
   // `B:<param>` 只在回调**没有任何声明类型**时才是正确的关系变量：回调已注解
   // 时 β 有解，把它当自由类型参数发布会让调用方把返回值推成任意类型（假绿）
-  // 或 unknown（假红）。返回位是裸 `B:` 变元 ⇒ 观测没有携带返回类型信息，
-  // 因此声明注解可以直接接棒（`"unknown"` 即「观测无信息」）。
+  // 或 unknown（假红）。
   const betaReturn =
     retAbs?.term?.op === "var" && retAbs.term.id.startsWith("B:")
-      ? (tsDeclaredReturn(fn, "unknown", ctx) ??
-        solveHofBetaFromParamAnnotation(fn, retAbs, ctx))
+      ? solveHofBetaFromParamAnnotation(fn, retAbs, ctx)
       : undefined;
-  const returnType = betaReturn ?? (retAbs ? absToTSTypeIr(retAbs, typeVars) : "unknown");
+  const returnType =
+    tsDeclaredReturn(fn, ctx) ??
+    betaReturn ??
+    (retAbs ? absToTSTypeIr(retAbs, typeVars) : "unknown");
   // ABS-14 PR4a：free 变元全量发射会留下悬空类型参数（entry-only
   // processItems 的 A2 从未被任何形参/返回位引用）。按签名文本过滤，
   // 与契约面 reachableTypeParams 同口径；投影单向，不改 Abs 分析结果。
@@ -1601,8 +1526,13 @@ export function contractOnlySignature(
     // `function f(a = 1)` 的 dts 面把 `a` 印成必填，而 standard 面
     // （契约级 ∪ 声明级）印成可选 ⇒ 三面互斥；声明级默认值是 JS 语义的
     // 「可省略」，契约没否决它 ⇒ 两来源取并。
-    const optional =
-      isRest || decl.isPattern ? false : hit.abs ? hit.optional === true || decl.hasDefault : decl.hasDefault;
+    const optional = isRest
+      ? false
+      : decl.isPattern
+        ? decl.hasDefault
+        : hit.abs
+          ? hit.optional === true || decl.hasDefault
+          : decl.hasDefault;
     slots.push({
       name,
       type: typeStr,
@@ -1624,9 +1554,9 @@ export function contractOnlySignature(
   // nudo:contract-param-mismatch，export 不执法）
   const returnType = contract.return
     ? contractReturnTSType(contract.return, typeVars)
-    : fn.combinedAbs
-      ? absToTSTypeIr(fn.combinedAbs, typeVars)
-      : "unknown";
+    : (tsReturnPredicate(fn, ctx) ??
+      tsDeclaredReturn(fn, ctx) ??
+      (fn.combinedAbs ? absToTSTypeIr(fn.combinedAbs, typeVars) : "unknown"));
   // 可达性过滤：只发射在最终签名文本里真正出现的类型形参
   // 可达性只看**类型文本**（paramTypes / returnType）——形参名不是类型引用
   const typeParams = reachableTypeParams(
@@ -1648,11 +1578,11 @@ export function contractOnlySignature(
 }
 
 // ---------------------------------------------------------------------------
-// 「第三种」：返回注解一致性校验
+// 「第三种」：返回注解一致性台账
 //
-// 实现是**事实**，声明是**断言**。两者不符时只出台账，产物恒用观测口径
-// （不覆盖、不 fallback 到声明）—— 否则会重演 BUG-168 在形参位修掉的
-// 「check 面与 dts 面相反裁决」。
+// 实现是**事实**，声明是**断言**。返回位有声明注解 ⇒ 产物发布声明（与 tsc
+// `--declaration` 同口径，见 `tsDeclaredReturn`）；两者不符时**只落台账**，
+// 不改发布类型——契约的权威在声明，观测留给读者对账。
 // ---------------------------------------------------------------------------
 
 const PRIM_TYPE_NAMES: ReadonlySet<string> = new Set([
@@ -1677,23 +1607,81 @@ export function firstIteratorElem(text: string): string | undefined {
   return m[2];
 }
 
+/**
+ * 返回注解与观测的冲突（落 `nudo:return-annotation-mismatch` 台账）。
+ *
+ * 两档判据，都只认「互斥」——假阳性比漏报更伤：
+ * - 迭代器元素（声明 `Generator<number>` 而观测 `Generator<string, …>`）：Abs
+ *   表达不了内建泛型实参 ⇒ 文本判据，只认两侧都是单一基类型且不同；
+ * - Abs 对账：**声明域落在基类型域**（`promise<…>` 包装之内是基类型 / never /
+ *   它们的联合，见 `isScalarTypeAbs`）且观测域与声明域**互不包含**。
+ *
+ * 为什么只对账基类型域：声明 Abs 是类型文本映射来的，结构类型在这一步是
+ * **有损**的——`Map<string, number>` 变成方法槽对象而运行时观测是名义
+ * brand `Map`（方法在原型上）、`(...xs: number[])` 丢 rest 标记、`object` /
+ * `{}` 变成空对象、`IterableIterator<string>` 丢类型实参 ⇒ 结构级的「互不
+ * 包含」分不清「真不一致」和「两侧各丢了一部分」（实测：90 个实现正确的
+ * 夹具里 9 条对账误报，全部落在结构档）。基类型（含字面量项）在类型文本 →
+ * Abs 这一步无损，双向不包含才真是互斥。结构级不一致 tsc 自己会报，这里
+ * 宁漏勿错。
+ *
+ * 观测 ⊆ 声明是正常的窄观测；声明 ⊆ 观测往往是求值面把字段播种成 any 得到
+ * 的宽域（`number | string`），都不判。unknown / any / never 天然落在「有包含
+ * 关系」一侧 ⇒ 观测推不出来时不会判「声明错了」。
+ *
+ * 声明引用本声明的类型形参（`T` / `T[]`）时不做 Abs 对账：观测面没有类型
+ * 变量这个维度，两域本来就不可比。
+ */
 export function returnAnnotationMismatch(
-  declared: string | undefined,
-  observed: string,
+  fn: FunctionAnalysis,
+  observedIr: string,
+  ctx?: DtsProjectionCtx,
 ): { declared: string; observed: string } | undefined {
-  if (!declared) return undefined;
   // 注解文本可能含换行 / 注释记号；只取可安全落进台账的形态（BUG-192 口径）。
-  const cleaned = tsAnnotationTypeText(declared);
-  if (!cleaned) return undefined;
-  const want = firstIteratorElem(cleaned);
-  const got = firstIteratorElem(observed);
-  if (!want || !got || want === got) return undefined;
-  if (!PRIM_TYPE_NAMES.has(want) || !PRIM_TYPE_NAMES.has(got)) return undefined;
-  // unknown / any 是保守域而非互斥断言 ⇒ 观测推不出来时不能判「声明错了」。
-  if (want === "unknown" || want === "any" || got === "unknown" || got === "any") {
+  const declared = tsAnnotationTypeText(fn.declaredReturnType);
+  if (!declared) return undefined;
+  const want = firstIteratorElem(declared);
+  const got = firstIteratorElem(observedIr);
+  if (want !== undefined && got !== undefined && want !== got) {
+    if (
+      PRIM_TYPE_NAMES.has(want) &&
+      PRIM_TYPE_NAMES.has(got) &&
+      // unknown / any 是保守域而非互斥断言 ⇒ 观测推不出来时不能判「声明错了」。
+      want !== "unknown" && want !== "any" && got !== "unknown" && got !== "any"
+    ) {
+      return { declared: `element "${want}"`, observed: `"${got}"` };
+    }
     return undefined;
   }
-  return { declared: want, observed: got };
+  const observedAbs = fn.combinedAbs;
+  const declaredAbs = fn.declaredReturnAbs;
+  if (!observedAbs || !declaredAbs) return undefined;
+  const declaredTypeParams = ctxTypeParamNames(ctx);
+  if (annotationTypeRefs(declared).some((n) => declaredTypeParams.has(n))) return undefined;
+  // `promise<…>` 包装：async / 返回 Promise 的函数两侧都是 eff，声明域的可信性
+  // 看包装之内；下面的包含比较仍用完整的两侧（`Promise<number>` vs `number` 是冲突）。
+  const declaredCore = declaredAbs.shape.k === "eff" ? declaredAbs.shape.inner : declaredAbs;
+  if (!isScalarTypeAbs(declaredCore, new Set())) return undefined;
+  if (leqAbs(observedAbs, declaredAbs).ok || leqAbs(declaredAbs, observedAbs).ok) {
+    return undefined;
+  }
+  return {
+    declared: `"${sanitizeCommentText(declared)}"`,
+    observed: `"${sanitizeCommentText(observedIr)}"`,
+  };
+}
+
+/**
+ * 基类型域：基类型（含字面量项）/ never / 它们的联合。类型文本 → Abs 只在
+ * 这一档无损，`returnAnnotationMismatch` 的 Abs 对账因此只信这一档。
+ */
+function isScalarTypeAbs(a: Abs, seen: Set<Abs>): boolean {
+  // 重入 = 环上的节点：按「视为成立」处理（seen 只防环，不做去重裁决）
+  if (seen.has(a)) return true;
+  seen.add(a);
+  const s = a.shape;
+  if (s.k === "prim" || s.k === "never") return true;
+  return s.k === "sum" && s.members.every((m) => isScalarTypeAbs(m, seen));
 }
 
 /** 类型谓词 / 断言签名文本（`x is T` / `this is T` / `asserts x` / `asserts x is T`） */
@@ -1771,96 +1759,163 @@ export function tsReturnPredicate(fn: FunctionAnalysis, ctx?: DtsProjectionCtx):
 }
 
 /**
- * 返回位的**声明注解原文**（BUG-132 / 192 / 196 / 206 / 209）。
+ * 返回位的**声明注解原文**：有声明 ⇒ 发布声明（与 tsc `--declaration` 同口径）。
  *
- * 形参位自 BUG-479 起就是「注解原文优先」，返回位只有谓词（BUG-134）与
- * 「引用本声明类型形参」（BUG-132）两档特殊情形优先。本函数补齐另外两档
- * **Abs 表达不了**的证据：
- * - `void`：Abs 没有「函数无返回值」这个维度，观测只能给 `undefined`，而
- *   TS 里二者单向可赋 ⇒ `ReturnType<typeof f>` 的合法用法被拒（BUG-196）；
- * - 观测无信息：`unknown`（推断失败）/ `never`（唯一观测在抛出点）都不是
- *   「类型」，声明是唯一可用的证据（BUG-209）。
+ * 形参位自 BUG-479 起就是「注解原文优先」，返回位同理：声明是发布契约，观测
+ * 只是某几次调用的取值。观测与声明冲突时产物不改，只落
+ * `nudo:return-annotation-mismatch` 台账（见 `returnAnnotationMismatch`）。
  *
- * 观测给出**具体**类型时仍以观测为准（「声明 vs 观测冲突 ⇒ 保留观测」是既有
- * 裁定，见 `returnAnnotationMismatch` 台账），本函数不翻转它。
- *
- * 只放行**产物里可解析**的注解：引用了不可解析的类型名 ⇒ 落台账并回落既有
- * 路径（与 `tsParamAnnotation` 同口径，避免 TS2304 的整份产物）。
+ * 例外：注解按原文在**产物里立不住** ⇒ 返回 undefined（调用方回落观测）。
+ * 立不住有两种，都只看类型形参与产物的可解析性、与观测无关：
+ * - 引用了**产物里不可解析**的类型名（落进 `.d.ts` 就是 TS2304，整份产物编译
+ *   不过）⇒ 落 dropped 台账；判据与 `tsParamAnnotation` 同一份；
+ * - 裸泛型引用（`(): Box` 而 `class Box<T>`、`(): G` 而 `interface G<T>` 有必填
+ *   形参，TS2314）⇒ 不落台账（名字本身可解析，见 `isBareGenericRef`）。
  */
-export function tsDeclaredReturn(
+export function tsDeclaredReturn(fn: FunctionAnalysis, ctx?: DtsProjectionCtx): string | undefined {
+  const decision = declaredReturnText(fn, ctx);
+  if (decision === undefined) return undefined;
+  const { unresolved, bareGeneric, refs } = decision;
+  if (unresolved !== undefined) {
+    ctx?.dropped?.push(`${fn.name}: ${unresolved} (return type)`);
+    return undefined;
+  }
+  // 裸泛型引用不落 dropped 台账：类型名本身可解析，只是引用不完整（见
+  // `isBareGenericRef`）；观测面带着实参（`Box<number>`）或是结构类型。
+  if (bareGeneric !== undefined) return undefined;
+  // 需要产物补声明的两类才记引用（内建 / 本地类型声明自带）
+  for (const name of refs) ctx?.typeRefs?.add(name);
+  return decision.text;
+}
+
+/**
+ * 返回注解是否**按声明发布**（非类型谓词、引用的类型名在产物里全部可解析、
+ * 没有裸泛型引用）。
+ *
+ * 无台账副作用：dts 面据此决定是否做「声明 vs 观测」对账（注解被丢弃时产物
+ * 已是观测，无对账可言）；export 的校验器面（guard / standard / zod）据此
+ * 决定返回面取声明 Abs 还是观测 Abs——与 dts 签发面同一判据，两面才不会
+ * 一边丢弃注解、一边仍按声明校验。
+ */
+export function isDeclaredReturnPublished(
   fn: FunctionAnalysis,
-  observed: string,
   ctx?: DtsProjectionCtx,
-  observedAbs?: Abs,
-): string | undefined {
+): boolean {
+  const decision = declaredReturnText(fn, ctx);
+  return (
+    decision !== undefined &&
+    decision.unresolved === undefined &&
+    decision.bareGeneric === undefined
+  );
+}
+
+/**
+ * 返回注解的引用分析（`tsDeclaredReturn` / `isDeclaredReturnPublished` 共用）：
+ * 非谓词注解 ⇒ 原文 + 第一个立不住的引用（不可解析的类型名 `unresolved` /
+ * 裸泛型引用 `bareGeneric`；全部可发布 ⇒ 两者皆 undefined）+ 需要产物补
+ * 声明的引用名。无注解 / 谓词注解 ⇒ undefined。
+ */
+function declaredReturnText(
+  fn: FunctionAnalysis,
+  ctx?: DtsProjectionCtx,
+): {
+  text: string;
+  unresolved: string | undefined;
+  bareGeneric: string | undefined;
+  refs: string[];
+} | undefined {
   const raw = tsAnnotationTypeText(fn.declaredReturnType);
   // 谓词（`x is T` / `asserts x`）由 tsReturnPredicate 独占：它的名字扫描口径
   // 不同（形参名不是类型引用），这里不重复判。
   if (!raw || isTypePredicateText(raw)) return undefined;
   const declared = ctxTypeParamNames(ctx);
-  // 引用**本声明类型形参**的注解永远优先（BUG-132）：Abs 没有「类型变量」
-  // 这个维度，观测只能给 unknown ⇒ 不采用就等于丢掉参数与返回的定义关系。
-  const usesTypeParam = annotationTypeRefs(raw).some((n) => declared.has(n));
-  // 声明注解在下列情形**必须**保留（否则产物与 tsc 相反）：
-  // - BUG-254：观测是内建泛型占位（`Map<unknown, unknown>`）而声明给了实参；
-  // - BUG-257：声明是 `readonly T[]` / `readonly [A, B]`，观测没有只读维度；
-  // - BUG-274：声明是函数类型，观测只有 `(a0: unknown) => unknown`；
-  // - BUG-261：声明是字面量类型（`"a"` / `42` / `true`），观测只能给基类型；
-  // - BUG-362：观测下标读带 `| undefined`，声明是更窄的 `T`。
-  // 声明域比观测域更窄（`(): number` 而观测是 `number | string`）⇒ 声明
-  // 是发布契约，必须保留；只有「观测更窄」时才让位（既有协变口径）。
-  const declaredAbs = observedAbs
-    ? absTypeForTsTypeText(raw, {
-        typeParams: new Map([...declared].map((n) => [n, anyAbs])),
-      })
-    : undefined;
-  const declaredNarrower =
-    declaredAbs !== undefined &&
-    observedAbs !== undefined &&
-    leqAbs(declaredAbs, observedAbs).ok &&
-    !leqAbs(observedAbs, declaredAbs).ok;
-  // BUG-403 配套：enum 作返回注解时 tsc 保留 `Color`，不会改写成成员字面量
-  // 联合 / 基类型。观测域是新映射出的 `"red" | "green"` ⇒ 必须让声明名胜出。
-  const bareName = raw.trim();
-  const namedEnumReturn =
-    /^[A-Za-z_$][\w$]*$/.test(bareName) &&
-    ctx?.surface?.values.get(bareName)?.kind === "enum";
-  // BUG-393：用户泛型类的具体返回注解（`Box<number>`）不能被裸 `Box` /
-  // `Box<unknown>` 观测覆盖——分析面 brand 不携带类型实参。
-  const genericRef = /^([A-Za-z_$][\w$]*)<[\s\S]+>$/.exec(bareName);
-  const genericDeclMorePrecise =
-    genericRef !== null &&
-    (observed === genericRef[1] || observed.startsWith(`${genericRef[1]}<unknown`));
-  const declarationMorePrecise =
-    declaredNarrower ||
-    namedEnumReturn ||
-    genericDeclMorePrecise ||
-    hasLibGlobalTypeText(raw) ||
-    isPlaceholderBuiltinType(observed) ||
-    (hasReadonlyTypePrefix(raw) && !observed.includes("readonly")) ||
-    (isFunctionTypeText(raw) && /=>\s*unknown/.test(observed)) ||
-    (hasLiteralTypeText(raw) && !hasLiteralTypeText(observed)) ||
-    (observed.includes("| undefined") && !raw.includes("| undefined"));
-  if (
-    !usesTypeParam &&
-    raw !== "void" &&
-    !declarationMorePrecise &&
-    !isNoInfoObservedType(observed) &&
-    observed !== "never"
-  ) {
-    return undefined;
-  }
   const valueRefs = typeofValueRefs(raw);
+  const surface = ctx?.surface;
+  let unresolved: string | undefined;
+  let bareGeneric: string | undefined;
+  const refs: string[] = [];
   for (const name of annotationTypeRefs(raw)) {
     if (TS_TYPE_TOKENS.has(name) || declared.has(name)) continue;
-    const surface = ctx?.surface;
     if (!isTypeRefResolvable(name, valueRefs.has(name), surface)) {
-      ctx?.dropped?.push(`${fn.name}: ${name} (return type)`);
-      return undefined;
+      unresolved = name;
+      break;
     }
-    if (surface?.classes.has(name) || surface?.imports?.has(name) === true) {
-      ctx?.typeRefs?.add(name);
+    if (!valueRefs.has(name) && isBareGenericRef(name, raw, surface)) {
+      bareGeneric = name;
+      break;
     }
+    if (surface?.classes.has(name) || surface?.imports?.has(name) === true) refs.push(name);
   }
-  return raw;
+  return { text: raw, unresolved, bareGeneric, refs };
+}
+
+/** 模块面里有**必填**类型形参的本地类名（按模块面记忆；`brandScopeOf` 的同一判据）。 */
+const genericClassesWithRequiredArgs = new WeakMap<DtsModuleSurface, ReadonlySet<string>>();
+
+/**
+ * `name` 是否是本模块里带**必填**类型形参的泛型类型（类 / 接口 / 类型别名）、且在
+ * 注解文本里以**裸名**出现（`(): Box` 而 `class Box<T>`；`(): G` 而 `interface G<T>`）。
+ *
+ * 与不可解析同族：注解按原文在产物里立不住——裸 `Box` 是 TS2314（Generic type
+ * requires 1 type argument）。全部形参带默认值（`class Box<T = string>`）时裸名
+ * 合法 ⇒ 不算。「有没有必填形参」：类沿用 BUG-040 给裸类名补占位实参的同一判据
+ * （`brandScopeOf().requiredArgFillers`）；接口 / 别名没有那一套 ⇒ 从声明原文的
+ * 形参子句判（`clauseHasRequiredTypeParam`）。
+ */
+function isBareGenericRef(
+  name: string,
+  text: string,
+  surface: DtsModuleSurface | undefined,
+): boolean {
+  if (surface === undefined) return false;
+  // 先做便宜的文本判定：有任何一个出现位置没紧跟 `<` 就是裸引用。字符串 / 模板
+  // 字面量类型里的同名（`"Box"` / `` `in ${string}` ``）前面是引号，不算。
+  const escaped = name.replace(/\$/g, "\\$");
+  if (!new RegExp(`(?<![\\w$."'\\\`])${escaped}(?![\\w$])(?!\\s*<)`).test(text)) {
+    return false;
+  }
+  if (surface.classes.has(name)) {
+    let names = genericClassesWithRequiredArgs.get(surface);
+    if (names === undefined) {
+      names = new Set(brandScopeOf(surface).requiredArgFillers.keys());
+      genericClassesWithRequiredArgs.set(surface, names);
+    }
+    return names.has(name);
+  }
+  for (const decl of surface.typeDeclarations ?? []) {
+    const head = typeDeclHead(escaped).exec(decl);
+    if (head === null) continue;
+    const afterOpen = decl.slice(head.index + head[0].length);
+    if (clauseHasRequiredTypeParam(typeDeclClauseInner(afterOpen))) return true;
+  }
+  return false;
+}
+
+/**
+ * 接口 / 类型别名声明的开头到类型形参子句的 `<`（`export interface G<` /
+ * `type A<` / `export default interface D<`）；没有子句（非泛型）⇒ 不匹配。
+ */
+function typeDeclHead(escapedName: string): RegExp {
+  return new RegExp(
+    `^\\s*(?:export\\s+)?(?:default\\s+)?(?:declare\\s+)?(?:interface|type)\\s+${escapedName}\\s*<`,
+  );
+}
+
+/** 类型形参子句的内部：`<` 之后到第一个配平的 `>` 之前（`=>` 的 `>` 不闭合）。 */
+function typeDeclClauseInner(afterOpen: string): string {
+  // 补回开头的 `<` ⇒ 子句整体处在深度 1，第一个配平的 `>` 就是顶层分隔符
+  return splitTopLevel(`<${afterOpen}`, ">")[0]!.slice(1);
+}
+
+/**
+ * 形参子句内部是否有**必填**（没带默认值）的形参。
+ *
+ * 默认值 = 形参文本里**顶层**的 `=`；`=>` 不是（约束可以是箭头函数类型，
+ * `T extends (x: number) => string`）。括号深度交给 `splitTopLevel`。
+ */
+function clauseHasRequiredTypeParam(inner: string): boolean {
+  return splitTopLevel(inner, ",").some((part) => {
+    const cuts = splitTopLevel(part, "=");
+    return !cuts.slice(1).some((after) => !after.startsWith(">"));
+  });
 }

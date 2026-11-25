@@ -1,6 +1,7 @@
 # ADR 0001 · SemanticIndex 与 Evidence（分析面事实一致性）
 
 > **状态**：**已接受（Accepted）** · 2026-11-14 §10 五项决议已拍板；阶段 0 与阶段 1 切片 1–3 已落地（2026-11-15），实施记录与验收见 §13–§16。
+> **更新（2026-11-25 · Phase 4 收口）**：迁移期影子双读与开关已删除——`entry-face-shadow.ts`、`entry-face-shadow.test.ts`、`semantic-index-shadow.test.ts`、`semantic-index-face.test.ts` 不再存在；入口面由 `SemanticIndex.entries` / `entryInfos` 单点承担，`check` 不再扫描旧普查，service 的节点普查由 `packages/service/src/__tests__/entry-census-parity.test.ts` 常驻对拍。下文 §13–§16 的实施日志保留为历史记录，其中对上述文件的引用按此更新理解。
 > **真源**：架构 → [`kernel-merge.md`](./kernel-merge.md) 与 `AGENT.md`；命令面 → [`cli-semantics.md`](./cli-semantics.md)；契约单源 → [`refine-derivation.md`](./refine-derivation.md)；架构债 → [`architecture-debt.md`](./architecture-debt.md)；会话缓存 → [`cache-invalidation.md`](./cache-invalidation.md)。
 > **触发**：`tmp/bug-report.md`（审计批次 2026-11-14，34 条 bug，夹具与逐字输出在 `/tmp/**`；其中前五批基于 HEAD `86bc56e1`，第六批基于 `f689d81b`，**实施前须重新定位行号**）。
 > **接线点（阶段 0–1 已落地）**：`core/src/algebra/scan/semantic-index.ts`、`core/src/algebra/diagnostics/evidence.ts`；已接线 `core/src/algebra/check/check.ts`、`service/src/analyzer-ast.ts`；待迁移 `service/src/emit/dts-generator.ts`、`nudojs/src/commands/**`、`lsp/src/lsp-surface/**`。

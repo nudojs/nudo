@@ -6,6 +6,7 @@ import { parseSource, stripTypes } from "../index.ts";
 import { stripTypes as stripTypes_____strip_types_ts } from "../strip-types.ts";
 import { call } from "../algebra/__tests__/eval-helpers.ts";
 import { litValue } from "../algebra/abs.ts";
+import { formalParamsFromNodes } from "../algebra/format/param-surface.ts";
 
 type Stmt = { type?: string; expression?: Expr };
 type Expr = {
@@ -1112,5 +1113,42 @@ describe("migrate strip: enum 字符串成员别名（BUG-105）", () => {
     const right = b.right as Record<string, unknown>;
     expect(right.type).toBe("MemberExpression");
     expect((right.property as { value?: string }).value).toBe("A");
+  });
+});
+
+describe("类型注解节点旁路（node→Abs 单点解析的输入）", () => {
+  it("形参 / 返回 / 类字段的注解节点保留且不可枚举；AST 结构等价面不变", () => {
+    const src = `function f(a: number, { b }: { b: string }): string { return b; }
+class C { v: number = 0; }
+`;
+    const ast = parseSource(src, { keepTs: true });
+    stripTypes_____strip_types_ts(ast, src);
+    const body = ast.program.body as unknown as Array<Record<string, unknown>>;
+    const fn = body.find((n) => n.type === "FunctionDeclaration") as
+      | {
+          params: Array<Record<string, unknown>>;
+          nudoReturnTypeNode?: { type?: string };
+        }
+      | undefined;
+    expect(fn).toBeDefined();
+    const [a, pat] = fn!.params;
+    expect((a?.nudoTypeNode as { type?: string } | undefined)?.type).toBe("TSNumberKeyword");
+    expect((pat?.nudoTypeNode as { type?: string } | undefined)?.type).toBe("TSTypeLiteral");
+    expect(fn!.nudoReturnTypeNode?.type).toBe("TSStringKeyword");
+    // 不可枚举：Object.keys / JSON 序列化 / 结构等价断言看不见
+    expect(Object.keys(a!)).not.toContain("nudoTypeNode");
+    expect(Object.getOwnPropertyDescriptor(a!, "nudoTypeNode")?.enumerable).toBe(false);
+    expect(JSON.stringify(a)).not.toContain("nudoTypeNode");
+
+    const cls = body.find((n) => n.type === "ClassDeclaration") as
+      | { body: { body: Array<Record<string, unknown>> } }
+      | undefined;
+    const prop = cls!.body.body[0]!;
+    expect((prop.nudoTypeNode as { type?: string } | undefined)?.type).toBe("TSNumberKeyword");
+
+    // 形参表面透传：FormalParam.tsTypeNode 与 tsType 同源。
+    const formals = formalParamsFromNodes(fn!.params as never);
+    expect((formals[0]?.tsTypeNode as { type?: string } | undefined)?.type).toBe("TSNumberKeyword");
+    expect((formals[1]?.tsTypeNode as { type?: string } | undefined)?.type).toBe("TSTypeLiteral");
   });
 });

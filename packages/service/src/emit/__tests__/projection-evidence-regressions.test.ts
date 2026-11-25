@@ -239,7 +239,7 @@ describe("静态方法形参注解", () => {
 });
 
 describe("namespace 成员 / 声明器注解", () => {
-  it("BUG-230 namespace 内无注解 const 的初始化器给出推断类型（`N.inferred: number`），消费方 `const n: number = N.inferred` 通过", () => {
+  it("BUG-230 / BUG-443 namespace 内无注解 const 保留字面量推断（`N.inferred: 1`），消费方 `const n: number = N.inferred` 通过", () => {
     const dts = moduleDts(`export namespace N {
   export const ann: number = 1;
   export const inferred = 1;
@@ -247,7 +247,8 @@ describe("namespace 成员 / 声明器注解", () => {
 export const topInferred = 1;
 `);
     expect(dts).toContain("export const ann: number;");
-    expect(dts).toContain("export const inferred: number;");
+    // BUG-443：namespace const 与顶层 const 同挂字面量闸门（tsc 同口径）。
+    expect(dts).toContain("export const inferred: 1;");
     // BUG-260：顶层 `const` 字面量初始化器保留字面量类型（tsc 同口径）。
     expect(dts).toContain("export declare const topInferred: 1;");
 

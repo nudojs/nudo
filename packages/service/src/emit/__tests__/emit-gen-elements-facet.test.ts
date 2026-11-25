@@ -5,10 +5,10 @@
  * ① `iteratorTSType` 的 T 优先取 `facets.genElements`（完整序列）；
  * 字段缺省时**严格 fallback** 到 shape 数字槽 ⇒ 手工夹具 / harvest
  * / 旧 Abs 的产物逐字不变。
- * ② 实现是事实、声明是断言：冲突只落 `nudo:return-annotation-mismatch`
- * 台账，**绝不覆盖观测产物**（避免 在形参位修掉的「两面相反」
- * 在返回位复现）。判据刻意收窄到「两侧都是单一基类型且互斥」，
- * 联合 / 泛型 / 字面量 / unknown 一律不判 ⇒ 零假阳性。
+ * ② 返回位有声明注解 ⇒ 产物**发布声明**（与 tsc `--declaration` 同口径）：
+ * 实现是事实、声明是断言，两者冲突只落 `nudo:return-annotation-mismatch`
+ * 台账，**不改发布类型**。迭代器元素这一档的判据刻意收窄到「两侧都是单一
+ * 基类型且互斥」，联合 / 泛型 / 字面量 / unknown 一律不判 ⇒ 零假阳性。
  */
 import { describe, it, expect } from "vitest";
 import { abs, numLit, type Abs } from "@nudojs/core";
@@ -59,7 +59,7 @@ describe("元素域同源投影", () => {
   });
 });
 
-describe("返回注解：只做一致性校验，不覆盖产物", () => {
+describe("返回注解：发布声明，冲突只出台账", () => {
   it("declaredReturnType 透传到 FunctionAnalysis", () => {
     const r = analyzeFile(
       "/test/third.ts",
@@ -70,13 +70,13 @@ describe("返回注解：只做一致性校验，不覆盖产物", () => {
     );
   });
 
-  it("声明与观测冲突 ⇒ 出台账，产物仍是观测类型", () => {
+  it("声明与观测冲突 ⇒ 出台账，产物发布声明", () => {
     const out = dtsOf(`export function* i(): Generator<number> { yield "s"; }`);
     expect(out).toContain("nudo:return-annotation-mismatch i");
     expect(out).toContain('declared element "number", observed "string"');
-    expect(out).toContain("kept the observed type");
-    expect(out).toContain("Generator<string");
-    expect(out).not.toContain("function i(): Generator<number>");
+    expect(out).toContain("published the declared type");
+    expect(out).toContain("function i(): Generator<number>");
+    expect(out).not.toContain("function i(): Generator<string");
   });
 
   it("声明与观测一致 ⇒ 无台账", () => {

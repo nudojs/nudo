@@ -127,8 +127,11 @@ export function scanClassSurface(
   decl: SurfaceNode,
   isResolvable: (name: string, valuePosition?: boolean) => boolean = () => false,
   source?: string,
+  memberNodes?: readonly SurfaceNode[],
 ): DtsClassMemberSurface {
-  const body = (decl.body as { body?: SurfaceNode[] } | undefined)?.body ?? [];
+  // Phase 3：类成员面由 `SemanticIndex.classBodyNodes` 提供（源码序）；
+  // 未传时回退源码节点，供 namespace 内嵌套类等未索引路径使用。
+  const body = memberNodes ?? (decl.body as { body?: SurfaceNode[] } | undefined)?.body ?? [];
   // BUG-168：源码声明的类型形参名（`class Box<T, U>`）——产物必须有类型形参槽，
   // 否则消费端 `new Box<string>(…)` 报 TS2558。
   // Babel 的形参节点是 `TSTypeParameter`（`name` 可能是标识符节点，也可能是
@@ -192,6 +195,8 @@ export function scanClassSurface(
   const ctorDecls: DtsCtorSignatureSurface[] = [];
   let ctorImpl: DtsCtorSignatureSurface | undefined;
   const instanceFields: DtsClassFieldSurface[] = [];
+  /** BUG-463：私有字段的类型表（不发射成员，只服务 getter 观测）。 */
+  const privateFields: Array<{ name: string; type: string }> = [];
   /** BUG-033：无注解 getter（待按返回值观测补类型） */
   const pendingGetters: Array<{ index: number; fn: SurfaceNode; isStatic: boolean }> = [];
   /** 无返回注解的静态方法（待按方法体观测补类型；与 getter 同一证据标准） */
@@ -249,7 +254,26 @@ export function scanClassSurface(
     init: SurfaceNode | undefined,
     symbolKey?: boolean,
   ): void => {
-    if (fieldNames.has(name)) return;
+    if (fieldNames.has(name)) {
+      // BUG-434：构造器 `this.v = …` 可能先于字段声明登记（源码序）；
+      // 真正的字段声明带注解，必须覆盖先到的观测条目。
+      const ann = fieldAnnotation(mem);
+      if (ann !== undefined) {
+        const idx = instanceFields.findIndex((f) => f.name === name);
+        if (idx >= 0) {
+          instanceFields[idx] = {
+            name,
+            type: classFieldType(init, ann, source, resolvableInClass, mem.readonly === true),
+            ...(mem.readonly === true ? { readonly: true } : {}),
+            ...(accessibilityOf(mem) ? { accessibility: accessibilityOf(mem) } : {}),
+            ...(mem.abstract === true ? { isAbstract: true } : {}),
+            ...(mem.optional === true ? { optional: true } : {}),
+            ...(symbolKey === true ? { symbolKey: true } : {}),
+          };
+        }
+      }
+      return;
+    }
     fieldNames.add(name);
     instanceFields.push({
       name,
@@ -393,6 +417,21 @@ export function scanClassSurface(
         mem.type === "ClassPrivateProperty" ||
         (mem.key as SurfaceNode | undefined)?.type === "PrivateName"
       ) {
+        // BUG-463：私有字段不发射成员，但 getter 观测需要它的类型。
+        const pk = mem.key as { id?: { name?: string }; name?: string } | undefined;
+        const pname = pk?.id?.name ?? pk?.name;
+        if (pname) {
+          privateFields.push({
+            name: pname,
+            type: classFieldType(
+              mem.value as SurfaceNode | undefined,
+              fieldAnnotation(mem),
+              source,
+              resolvableInClass,
+              mem.readonly === true,
+            ),
+          });
+        }
         hasPrivateIdentifier = true;
         continue;
       }
@@ -403,6 +442,12 @@ export function scanClassSurface(
       // Bug 23：static 字段也收集（旧的 `mem.static !== true` 过滤把它整条挡掉）。
       if (mem.static === true) addStaticField(keyInfo.name, mem, keyInfo.symbolKey === true);
       else addField(keyInfo.name, mem, mem.value as SurfaceNode | undefined, keyInfo.symbolKey === true);
+      continue;
+    }
+    // BUG-417：私有方法不发射为结构成员，但必须贡献 `#private;` 名义标记
+    // （仅有 `#m()` 的类在 tsc 产物里仍是名义类型）。
+    if (mem.type === "ClassPrivateMethod") {
+      hasPrivateIdentifier = true;
       continue;
     }
     const isMethod =
@@ -470,6 +515,7 @@ export function scanClassSurface(
         kind,
         type: t,
         ...(mem.static === true ? { isStatic: true } : {}),
+        ...(mem.abstract === true ? { isAbstract: true } : {}),
         ...(accessibility ? { accessibility } : {}),
         ...(keyInfo.symbolKey === true ? { symbolKey: true } : {}),
       });
@@ -529,7 +575,7 @@ export function scanClassSurface(
         // BUG-156（注解档）：源码**有**返回注解时，注解本身就是 `check` 签名面
         // 发布的那条类型 —— 求值面把 `this.<字段>` 播种成 any 得到的宽域
         // （`number | string`）不该盖过它。与形参位同一「可解析」判据；发射侧
-        // 只收窄不放宽（`refineObservedReturn`），注解对不上观测时原样保留。
+        // 有注解即发布注解（`refineObservedReturn`），不作收窄/放宽的选择。
         const evidence = safeFieldTypeAnnotation(returnType, resolvableInMethod);
         if (evidence !== undefined) entry.annotationReturnType = evidence;
       }
@@ -567,7 +613,7 @@ export function scanClassSurface(
   // 就写在同一份产物里，同次 `check` / `tsc --declaration` 都是 `number`。
   // 这里只做**声明面**能确定的一件事：按源码注解（字段 / 形参）与字面量给
   // 单个 `return` 表达式定型（算术 / 模板 / 比较而已，不做调用推断）。
-  // 发射侧**只收窄不放宽**（见 `refineObservedReturn`）。
+  // 发射侧**有注解即发布注解**（见 `refineObservedReturn`）。
   for (const m of pendingAnnotationReturns) {
     const inferred = annotationReturnTypeOf(m.fn, m.paramNames, m.paramTypes, false);
     if (inferred !== undefined) m.entry.annotationReturnType = inferred;
@@ -678,6 +724,10 @@ export function scanClassSurface(
       ? t
       : undefined;
   }
+  function privateNameOf(node: SurfaceNode | undefined): string | undefined {
+    const n = node as { type?: string; id?: { name?: string }; name?: string } | undefined;
+    return n?.type === "PrivateName" ? (n.id?.name ?? n.name) : undefined;
+  }
   function getterObservedType(fnNode: SurfaceNode, isStatic: boolean): string | undefined {
     const returns: SurfaceNode[] = [];
     collectReturns(fnNode.body as SurfaceNode | undefined, returns);
@@ -687,8 +737,12 @@ export function scanClassSurface(
     if (ret === undefined) return undefined;
     if (ret.type === "MemberExpression") {
       const obj = ret.object as SurfaceNode | undefined;
-      const key = surfaceName(ret.property as SurfaceNode | undefined);
+      const prop = ret.property as SurfaceNode | undefined;
+      const key = surfaceName(prop) ?? privateNameOf(prop);
       if (obj?.type !== "ThisExpression" || !key || ret.computed === true) return undefined;
+      if (privateNameOf(prop) !== undefined) {
+        return privateFields.find((f) => f.name === key)?.type;
+      }
       const table = isStatic ? staticFields : instanceFields;
       return table.find((f) => f.name === key)?.type;
     }

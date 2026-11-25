@@ -43,6 +43,7 @@
 | [design/plans/2026-09-19-close-remaining-dx-gaps.md](./design/plans/2026-09-19-close-remaining-dx-gaps.md) | **现行**：未闭环 `[~]` + Backlog；已交付任务不在此保留 evidence |
 | [design/plans/2026-11-09-abs-improvement-plan.md](./design/plans/2026-11-09-abs-improvement-plan.md) | **现行 backlog**（2026-11-14 生命周期清算，已交付正文删除）：开放 `ABS-16`③（worker 并行，触发条件在 §5）、`ABS-17`（写时复制，暂缓）；`ABS-13` 残余结案不做（需 CPS，见 §8）；`ABS-15` 已交付（提升规则门禁 + 键版本化）；`ABS-01`…`ABS-12` / `ABS-14` / `ABS-16`① / `ABS-18` 已交付，证据在测试 / changeset / git |
 | [design/plans/2026-11-15-bug-audit-fix-plan.md](./design/plans/2026-11-15-bug-audit-fix-plan.md) | **现行**：审计 34 条按根因归 8 组（D1–D8）的修复顺序与单一入口；D1（BUG-018）已交付，其余见 §1 状态 |
+| [design/plans/2026-11-24-root-cause-eradication.md](./design/plans/2026-11-24-root-cause-eradication.md) | **现行**：语法→Abs→产品面三边界的单点化（Phase 0–4 已交付主体）；未闭环项见 §2（文本解析器仍服务文本型输入、裸泛型返回、LSP 本地符号面） |
 
 ## CI 用法与报告（非设计）
 

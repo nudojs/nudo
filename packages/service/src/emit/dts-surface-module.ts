@@ -5,6 +5,7 @@
  * 不依赖 Abs 投影上下文；`dtsModuleSurface` 仍负责模块级导出绑定表。
  */
 import { parseSource } from "@nudojs/core";
+import { buildSemanticIndex } from "@nudojs/core/internal";
 import { isJsBindingIdent } from "@nudojs/core/internal";
 import { isRuntimeGlobalCtorName } from "./schema-generator.ts";
 import {
@@ -30,6 +31,7 @@ import {
   surfaceParamNames,
   userSymbolMemberKeys,
   valueTypeTextOfInit,
+  literalTypeTextOfInit,
 } from "./dts-surface-value.ts";
 import {
   cjsPropName,
@@ -191,8 +193,15 @@ function namespaceMemberLines(
         // ⇒ 无注解成员一律 `unknown`（消费方 `const n: number = N.inferred`
         // 报 TS2322）。表达式 / 标识符不猜（`valueTypeTextOfInit` 给 unknown）。
         const annotation = surfaceParamType(source, id).slice(2);
+        // BUG-443：namespace `const` 与顶层 `const` 同挂字面量闸门
+        // （tsc：`export const v = 1` ⇒ `v: 1`，不拓宽成 number）。
+        const literal =
+          kind === "const" && annotation === ""
+            ? literalTypeTextOfInit(d.init as SurfaceNode | undefined)
+            : undefined;
         const t =
           annotation ||
+          literal ||
           (id?.type === "Identifier"
             ? valueTypeTextOfInit(d.init as SurfaceNode | undefined, source)
             : "unknown");
@@ -200,7 +209,8 @@ function namespaceMemberLines(
       }
       return out;
     }
-    case "FunctionDeclaration": {
+    case "FunctionDeclaration":
+    case "TSDeclareFunction": {
       const name = surfaceName(decl.id as SurfaceNode | undefined);
       if (!name) return [];
       const params = ((decl.params as SurfaceNode[] | undefined) ?? []).map((p, i) =>
@@ -247,22 +257,35 @@ function namespaceMemberLines(
 }
 
 /** namespace 体 → 成员行（`namespace A.B` 的尾段挂在嵌套 TSModuleDeclaration 上） */
-export function namespaceMembersOf(decl: SurfaceNode, source: string): string[] {
+export function namespaceMembersOf(
+  decl: SurfaceNode,
+  source: string,
+  index?: ReturnType<typeof buildSemanticIndex>,
+): string[] {
   const body = decl.body as SurfaceNode | undefined;
   if (body && body.type === "TSModuleDeclaration") {
     const name = surfaceName(body.id as SurfaceNode | undefined);
     if (!name) return [];
     return [
       `export namespace ${name} {`,
-      ...namespaceMembersOf(body, source).map((l) => `  ${l}`),
+      ...namespaceMembersOf(body, source, index).map((l) => `  ${l}`),
       `}`,
     ];
   }
   const out: string[] = [];
-  for (const stmt of (body?.body as SurfaceNode[] | undefined) ?? []) {
-    // 只有 `export` 的成员对外可见（未导出成员是 namespace 内部绑定）
-    if (stmt.type !== "ExportNamedDeclaration") continue;
-    out.push(...namespaceMemberLines(stmt.declaration as SurfaceNode | null | undefined, source));
+  // BUG-462：ambient namespace（`declare namespace`）的成员在 TS 里隐式导出；
+  // 普通 namespace 仍只收 `export` 成员。
+  const ambient = (decl as { declare?: boolean }).declare === true;
+  const indexedNodes =
+    index && typeof decl.start === "number"
+      ? index.namespaceBodyNodes.get(decl.start)
+      : undefined;
+  for (const stmt of (indexedNodes as SurfaceNode[] | undefined) ?? (body?.body as SurfaceNode[] | undefined) ?? []) {
+    if (stmt.type === "ExportNamedDeclaration") {
+      out.push(...namespaceMemberLines(stmt.declaration as SurfaceNode | null | undefined, source));
+      continue;
+    }
+    if (ambient) out.push(...namespaceMemberLines(stmt as SurfaceNode, source));
   }
   return out;
 }
@@ -305,10 +328,20 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     return surface; // 解析失败：无导出面信息，不阻断（与 core 侧车同口径）
   }
   const body = ast.program.body;
-  const bind = (exportName: string, local: string): void => {
-    if (!exportName) return;
-    if (!surface.exportBindings.has(exportName)) surface.exportBindings.set(exportName, local);
-  };
+  // Phase 3：导出槽表只读 `SemanticIndex.exportSlotInfos`（core 单点）。
+  // 本文件其余分支只负责声明 / 再导出文本 / 值 / 类 / namespace 的渲染。
+  let semanticIndex: ReturnType<typeof buildSemanticIndex> | undefined;
+  try {
+    const index = buildSemanticIndex(ast as unknown as Parameters<typeof buildSemanticIndex>[0]);
+    semanticIndex = index;
+    for (const info of index.exportSlotInfos.values()) {
+      if (!surface.exportBindings.has(info.slot)) {
+        surface.exportBindings.set(info.slot, info.local);
+      }
+    }
+  } catch {
+    // 索引不可用（非 File 形态的 AST）⇒ 下面的 bind 调用仍是兼容回退。
+  }
 
   /**
    * Bug 62：CJS 值导出登记 `surface.values`（此前只 `bind` ⇒ 导出名表有、
@@ -445,7 +478,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       const typeKw = stmt.exportKind === "type" ? "type " : "";
       if (ns) {
         surface.reexports.push(`export ${typeKw}* as ${exportNameRepr(ns)} from ${src};`);
-        bind(ns, "");
+        void 0;
       } else {
         surface.reexports.push(`export ${typeKw}* from ${src};`);
       }
@@ -477,14 +510,14 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
             surface.reexports.push(
               `export ${stmtTypeOnly ? "type " : ""}* as ${exportNameRepr(ns)} from ${src};`,
             );
-            bind(ns, "");
+            void 0;
             continue;
           }
           if (spec.type !== "ExportSpecifier") continue;
           const local = surfaceName(spec.local as SurfaceNode | undefined);
           const exported = surfaceName(spec.exported as SurfaceNode | undefined);
           if (!exported) continue;
-          bind(exported, "");
+          void 0;
           // Bug 30：导出名 / 本地名都走 exportNameRepr（字符串名 `a-b` ⇒ `"a-b"`）。
           const localRepr = exportNameRepr(local ?? exported);
           const exportedRepr = exportNameRepr(exported);
@@ -513,14 +546,14 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
           decl.type === "TSEnumDeclaration"
         ) {
           const id = surfaceName(decl.id as SurfaceNode | undefined);
-          if (id) bind(id, id);
+          if (id) void 0;
         } else if (decl.type === "TSDeclareFunction") {
           // BUG-131：ambient `export declare function f(): T;` 没有函数体、
           // 不进分析面 ⇒ 旧实现既不登记也不发射，整条从产物消失（消费方
           // TS2305）。声明面即事实：原文镜像进产物（与 interface/type 同口径）。
           const id = surfaceName(decl.id as SurfaceNode | undefined);
           if (id) {
-            bind(id, id);
+            void 0;
             const text = surfaceSlice(source, stmt);
             if (text) {
               surface.typeDeclarations!.push(ambientFunctionDeclarationText(text));
@@ -532,7 +565,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
             // Bug 63：解构导出绑定（ObjectPattern / ArrayPattern / RestElement）
             // 的导出名此前恒为 undefined ⇒ bind 从未发生 ⇒ dts 面整体缺席。
             for (const id of patternBindingNames(d.id as SurfaceNode | undefined)) {
-              bind(id, id);
+              void 0;
             }
           }
         } else if (decl.type === "TSModuleDeclaration") {
@@ -541,9 +574,12 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
           // （消费端 TS2305）。成员按源码形态镜像（见 namespaceMembersOf）。
           const id = surfaceName(decl.id as SurfaceNode | undefined);
           if (id) {
-            bind(id, id);
+            void 0;
+            // BUG-457：同名 namespace 是 TS 声明合并，不是后写覆盖。
+            // 合并成员（保持源码序）；tsc 也可逐个块发射，单块合并等价。
+            const prev = surface.namespaces!.get(id);
             surface.namespaces!.set(id, {
-              members: namespaceMembersOf(decl, source),
+              members: [...(prev?.members ?? []), ...namespaceMembersOf(decl, source, semanticIndex)],
             });
           }
         }
@@ -583,14 +619,14 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       for (const spec of specs) {
         if (spec.type === "ExportNamespaceSpecifier") {
           const ns = surfaceName(spec.exported as SurfaceNode | undefined);
-          if (ns) bind(ns, "");
+          if (ns) void 0;
           continue;
         }
         if (spec.type !== "ExportSpecifier") continue;
         const local = surfaceName(spec.local as SurfaceNode | undefined);
         const exported = surfaceName(spec.exported as SurfaceNode | undefined);
         if (!exported || !local) continue;
-        bind(exported, local);
+        void 0;
         // BUG-390：本地再导出命名空间导入 —— 产物补
         // `import * as ns …; export { ns };`（不得静默空产物）。
         if (surface.namespaceImports?.has(local)) {
@@ -604,24 +640,24 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     if (stmt.type === "ExportDefaultDeclaration") {
       const decl = stmt.declaration as SurfaceNode | null | undefined;
       if (!decl) {
-        bind("default", "");
+        void 0;
         continue;
       }
       if (decl.type === "FunctionDeclaration" || decl.type === "ClassDeclaration") {
         // 匿名默认类 / 函数没有本地绑定名。匿名默认**类**的类声明面由
         // `classDecls` 里按普查名 "default" 的注册承载（Bug 12A），与这里的
         // 导出绑定表无关（dtsExportNamesOf 对 "default" 有专用分支）。
-        bind("default", surfaceName(decl.id as SurfaceNode | undefined) ?? "");
+        void 0;
         continue;
       }
       if (decl.type === "ArrowFunctionExpression" || decl.type === "FunctionExpression") {
         // 匿名默认函数由普查面函数声明发射（Bug 12B 给名字），不另发值声明
         // （否则与 `export default function …` 撞成两个 default 导出）。
-        bind("default", "");
+        void 0;
         continue;
       }
       if (decl.type === "Identifier") {
-        bind("default", surfaceName(decl) ?? "");
+        void 0;
         continue;
       }
       // BUG-272：`export default interface D { … }` / `export default type T = …`
@@ -642,12 +678,14 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       // join）——`classFieldTypeOfInit` 只给宽类型 `object` / `unknown[]`，
       // 消费方 `cfg.a` 直接 TS2339。与 CJS `module.exports = {…}` 同口径。
       if (!surface.values.has("_default")) {
+        const literal = literalTypeTextOfInit(decl);
         surface.values.set("_default", {
           kind: "const",
-          typeText: valueTypeTextOfInit(decl, source),
+          typeText: literal ?? valueTypeTextOfInit(decl, source),
+          ...(literal !== undefined ? { literalConst: true } : {}),
         });
       }
-      bind("default", "_default");
+      void 0;
       continue;
     }
     if (stmt.type === "ExpressionStatement") {
@@ -658,7 +696,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       if (!left || !right) continue;
       const prop = cjsPropName(left);
       if (prop && prop !== "default") {
-        bind(prop, prop);
+        void 0;
         // Bug 62：`exports.num = 1` 等值导出登记值声明（函数 / 类右值走函数面）
         if (!isFnOrClassInit(right)) noteCjsValue(prop, right);
         continue;
@@ -668,7 +706,7 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
         for (const p of (right.properties as SurfaceNode[] | undefined) ?? []) {
           const key = surfaceName(p.key as SurfaceNode | undefined);
           if (!key || key === "default") continue;
-          bind(key, key);
+          void 0;
           // 只有值成员登记值声明（方法 / 函数值属性走函数声明面）
           const v = (p.value ?? undefined) as SurfaceNode | undefined;
           if (p.type !== "ObjectMethod" && p.type !== "ClassMethod" && !isFnOrClassInit(v)) {
@@ -680,13 +718,13 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       if (right.type === "Identifier") {
         const n = surfaceName(right);
         if (n) {
-          bind(n, n);
+          void 0;
           // BUG-008：`module.exports = real` —— 模块形态是 `export =`。
           exportEqualsCandidate = n;
         }
         continue;
       }
-      bind("default", "");
+      void 0;
       // BUG-008：`module.exports = function () {}`（匿名右值）同样是 `export =`
       exportEqualsCandidate = "";
     }
@@ -719,6 +757,8 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
   // BUG-258：顶层值名（`typeof target` 只对真正存在的绑定成立）——在值声明
   // 扫描之前一次性收集，避免把局部 / 未声明名字写成 TS2304。
   const knownTopLevelValues = new Set<string>();
+  /** BUG-429：模块局部值 → 初始化式节点（`typeof` 不可写时取放宽后的类型）。 */
+  const localValueInits = new Map<string, SurfaceNode>();
   for (const stmt of body) {
     const decl =
       stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
@@ -778,7 +818,13 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
         // 引用 / 显式泛型实参）。只对单标识符绑定采集。
         const initTypeText =
           idNode?.type === "Identifier"
-            ? valueTypeTextOfInit(init, source, (n) => knownTopLevelValues.has(n))
+            ? valueTypeTextOfInit(
+                init,
+                source,
+                (n) => knownTopLevelValues.has(n) && dtsExportNamesOf(surface, n).length > 0,
+                undefined,
+                (n) => localValueTypeText(n),
+              )
             : undefined;
         // BUG-263：用户符号成员键（`{ [tag]: 1 }`）的源码名。
         const userSymbolKeys =
@@ -887,6 +933,36 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
       });
     }
   };
+  // BUG-429：先收集模块局部值的初始化式，供 `{ name: LOCAL }` 的对象 / 数组
+  // 成员投影使用（局部名不能写 `typeof LOCAL`，但可以写它的字面量放宽类型）。
+  for (const stmt of body) {
+    const decl =
+      stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
+        ? (stmt.declaration as SurfaceNode | undefined)
+        : stmt;
+    if (decl?.type !== "VariableDeclaration") continue;
+    for (const d of (decl.declarations as SurfaceNode[] | undefined) ?? []) {
+      const id = d.id as SurfaceNode | undefined;
+      const init = d.init as SurfaceNode | undefined;
+      if (id?.type === "Identifier" && typeof id.name === "string" && init) {
+        localValueInits.set(id.name, init);
+      }
+    }
+  }
+  function localValueTypeText(name: string, seen: Set<string> = new Set()): string | undefined {
+    if (seen.has(name)) return undefined;
+    const init = localValueInits.get(name);
+    if (!init) return undefined;
+    seen.add(name);
+    return valueTypeTextOfInit(
+      init,
+      source,
+      (n) => knownTopLevelValues.has(n) && dtsExportNamesOf(surface, n).length > 0,
+      undefined,
+      (n) => localValueTypeText(n, seen),
+    );
+  }
+
   for (const stmt of body) {
     if (stmt.type === "VariableDeclaration" || stmt.type === "TSEnumDeclaration") {
       noteValueDecl(stmt);
@@ -1061,6 +1137,9 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
           "unknown";
         out.push(`function ${name}(${params}): ${ret};`);
       } else {
+        // **赋值**成员不挂字面量闸门：`f.version = "1.0"` 在 tsc 的 dts 里是
+        // `let version: string`（属性赋值拓宽），只有 `const` 声明才是字面量
+        // 类型（`namespace N { const v = 1 }` ⇒ `const v = 1`）。
         out.push(`const ${name}: ${valueTypeTextOfInit(init, source)};`);
       }
     }
@@ -1145,11 +1224,11 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
   // 「注解里的名字在产物里是否可解析」的判据只登记 interface / type 别名
   // ⇒ `paint(c: Color)` 被误判成「type not declared in this module」整条丢弃
   // （形参 / 字段回落 unknown，返回位靠声明注解回落）。两张清单同源：
-  // 只有**会被发射**的导出 enum 才算可解析（未导出 enum 在产物里没有声明，
-  // 放行会 TS2304）。必须在类面扫描之前登记（类字段注解用同一判据）。
+  // **所有** enum 都会被 `dtsValueDeclarations` 发射（导出 enum 带 export；
+  // 非导出 enum 发模块局部 `declare enum`，见 BUG-453），因此都可解析。
+  // 必须在类面扫描之前登记（类字段注解用同一判据）。
   for (const [local, value] of surface.values) {
     if (value.kind !== "enum") continue;
-    if (dtsExportNamesOf(surface, local).length === 0) continue;
     surface.typeNames!.add(local);
   }
 
@@ -1176,7 +1255,19 @@ export function dtsModuleSurface(source: string): DtsModuleSurface {
     );
   };
   for (const [local, decl] of classDecls) {
-    const scanned = scanClassSurface(decl, isResolvableName, source);
+    const classSymbolId =
+      semanticIndex && typeof decl.start === "number"
+        ? semanticIndex.classNodeIds.get(decl.start)
+        : undefined;
+    const memberNodes = classSymbolId
+      ? semanticIndex?.classBodyNodes.get(classSymbolId)
+      : undefined;
+    const scanned = scanClassSurface(
+      decl,
+      isResolvableName,
+      source,
+      memberNodes as SurfaceNode[] | undefined,
+    );
     // BUG-193：类方法的默认值证据挂到模块面（分析面签名 `C.m` 的形参位兜底）
     for (const m of [...scanned.instanceMethods, ...scanned.staticMethods]) {
       if (m.paramDefaults !== undefined) {

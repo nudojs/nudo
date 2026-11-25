@@ -240,7 +240,7 @@ function padOmittedArgs(
 export function $fnVal(
   params: string[],
   impl: (...args: Abs[]) => Abs,
-  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" | "async" | "generator" | "async-generator"; optionalParams?: boolean[]; emptyBody?: boolean; predicate?: { paramIndex: number; typeOf: string } },
+  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" | "async" | "generator" | "async-generator"; optionalParams?: boolean[]; emptyBody?: boolean; predicate?: { paramIndex: number; typeOf: string }; paramTypes?: Abs[]; returnType?: Abs },
 ): Abs {
   const argsOf =
     opts?.padArgs === false
@@ -277,6 +277,8 @@ export function $fnVal(
     {
       ...(opts?.ctor !== undefined ? { ctor: opts.ctor } : {}),
       ...(opts?.length !== undefined ? { length: opts.length } : {}),
+      ...(opts?.paramTypes !== undefined ? { paramTypes: opts.paramTypes } : {}),
+      ...(opts?.returnType !== undefined ? { returnType: opts.returnType } : {}),
     },
   );
   // BUG-367 / BUG-382：回调的类型谓词声明（HOF 结果域消费）。

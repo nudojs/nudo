@@ -106,6 +106,9 @@ export { domainEvidenceCases } from "./domain-cases.ts";
 
 export { generateGuardFunctionFromAbs } from "./guard-generator.ts";
 
+// ─── 返回注解发布判据（dts 签发面与 export 校验器面共用，两面同口径） ────
+export { isDeclaredReturnPublished } from "./dts-signature.ts";
+
 // ─── Case（debug 见证 / CaseJson / case 注入，非接口产品） ───────────
 export {
   serializeCaseJson,

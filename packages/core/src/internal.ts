@@ -227,13 +227,18 @@ export { isEsmProgram } from "./algebra/exec/transpile/meta.ts";
 // `x: string | null` 在入口观测 / dts / zod / guard 面整条退 any。
 export {
   absShapeForTsTypeText,
+  absTypeForTsAnnotation,
+  absTypeForTsTypeNode,
   absTypeForTsTypeText,
+  importedTypesForSource,
+  namedTypeNodesForSource,
   namedTypeTextsForSource,
+  sameFileAnnotationEnv,
   valueTypeTextsForSource,
-  importedTypeTextsForSource,
   resolveNamedTypeText,
   splitTypeArgs,
   type AnnotationEnv,
+  type ImportedTypeTables,
 } from "./algebra/contract/ts-type-shape.ts";
 // check 签名面的形参类型文本（`nudo check` 与 lsp hover 的形参行同口径；
 // 此前 LSP 侧留同公式拷贝 formatEntryParamShapeLike 靠手工同步）
@@ -248,20 +253,12 @@ export { ERROR_CTOR_NAMES } from "./algebra/diagnostics/error-names.ts";
 // （见 kernel-merge.md「绑定索引层」）。阶段 1 切片 1 只暴露最小只读面。
 export {
   buildSemanticIndex,
+  type EntryForm,
+  type EntryInfo,
+  SUPPLEMENTARY_ENTRY_FORMS,
   type SemanticIndex,
   type SymbolId,
 } from "./algebra/scan/semantic-index.ts";
-export {
-  compareEntryFaces,
-  recordSemanticIndexShadow,
-  resolveEntryFace,
-  semanticIndexEntryFaceSegment,
-  semanticIndexShadowActive,
-  setSemanticIndexEntryFace,
-  setSemanticIndexShadow,
-  takeSemanticIndexShadow,
-  type EntryFaceDiff,
-} from "./algebra/scan/entry-face-shadow.ts";
 // ADR 0001 阶段 1 切片 4.1：Evidence 只读面 + 发布门影子双读。
 // 仍经 internal 通道；`.` 产品面不泄漏（§10 决议 3）。
 export {

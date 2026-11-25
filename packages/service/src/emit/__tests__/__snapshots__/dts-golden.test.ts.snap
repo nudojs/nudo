@@ -106,9 +106,9 @@ exports[`dts golden — 删除旧渲染器前的基线 > objects-index-view 1`] 
 export declare function obj(x: { a: number; b?: string }): { a: number; b?: string };
 /**
  * Case: entry@L2 () => { a: 1 }
- * @returns { a: number }
+ * @returns { [key: string]: number }
  */
-export declare function idx(): { a: number };
+export declare function idx(): { [key: string]: number };
 /**
  * Case: entry@L3 () => readonly [1, 2]
  * @returns readonly number[]

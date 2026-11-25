@@ -12,6 +12,7 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { cliEnvForCwd } from "./run-cli.ts";
 
 export const repoRoot = fileURLToPath(new URL("../../../../../", import.meta.url));
 const cliEntry = join(repoRoot, "packages/nudojs/src/index.ts");
@@ -60,7 +61,10 @@ export async function runWatchCli(
   const cliArgs = opts.watch === false ? args : [...args, "--watch"];
   const child = spawn(process.execPath, ["--import", tsxLoader, cliEntry, ...cliArgs], {
     cwd: opts.cwd ?? repoRoot,
-    env: { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "false" },
+    // 与 run-cli.ts 同一个环境口径：本地默认把 `@nudojs/*` 解析回**源码**
+    // （tsconfig paths），`NUDO_TEST_CLI=dist` 时保持 dist 面。
+    // 否则新增的跨包导出在本地 build 之前一律假红（dist 陈旧）。
+    env: cliEnvForCwd(opts.cwd ?? repoRoot),
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";

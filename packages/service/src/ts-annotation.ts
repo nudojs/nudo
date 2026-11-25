@@ -1,17 +1,16 @@
 /**
- * Bug 479：`.ts` 源的 **TS 类型注解**（service 侧唯一消费点）。
+ * Bug 479：`.ts` 源的 **TS 类型注解**（service 侧消费点）。
  *
  * 解析层（core `packages/core/src/strip-types.ts`）把注解的**源码文本**留在
  * AST 节点的**不可枚举**旁路上（形参 `nudoTypeText` / 返回
- * `nudoReturnTypeText`），core 的 `param-surface.ts` 再经 `FormalParam.tsType`
- * 带出。本文件把该文本接到 service 的两个面上：
+ * `nudoReturnTypeText`；结构节点走 `nudoTypeNode` 旁路），core 的
+ * `param-surface.ts` 再经 `FormalParam.tsType` 带出。本文件把注解接到 service
+ * 的两个面上：
  *
- * 1. **推断面**（entry@ 实参 / 形参类型）：声明类型文本 → Abs 形状。
- *    口径与 core `packages/core/src/algebra/ts-type-shape.ts` **同表**：只映射
- *    JS 一等类型 `string` / `number` / `boolean` / `bigint` / `symbol`；
- *    别名 / 泛型 / 联合 / 对象类型**不映射** ⇒ 回落「无约束 any」（不猜）。
- *    单源：core 的 `absShapeForTsTypeText` 经 `@nudojs/core/internal` 复用
- *    （此前是同表复刻、靠 drift-gate 测试互钉；口径注释在 core 侧）。
+ * 1. **推断面**（入口 / 返回注解 → Abs）：{@link annotationEnvForFile} 是
+ *    文件级注解环境的唯一拼装点（跨文件导入表 + 同文件声明 + 类型参数），
+ *    映射单点是 core 的 `absTypeForTsAnnotation`（节点优先、文本兜底）——
+ *    与 core 泛化面同一张表，别名 / 泛型 / 联合 / 对象类型都按它映射。
  * 2. **产物面**（dts 参数位）：声明类型文本 → TS 类型串，
  *    **保留注解原文**（源里写什么，声明位就是什么）。
  *    只放行「可安全落进 .d.ts」的文本：含注释记号（块注释 / 行注释）、换行或
@@ -23,44 +22,80 @@
  * - **不可映射 ≠ unknown**：推断面回落的是 **any**（无约束 = 任意 JS 值），
  *   不是 unknown（分析失败）——与 design-cli-semantics §2 一致。
  */
-import { typeAnnotationSourceOf } from "./type-annotation-resolve.ts";
+import { importedTypeTablesFor } from "./type-annotation-resolve.ts";
 import type { Abs, Shape } from "@nudojs/core";
 import { abs as makeAbsVal, anyAbs, spread, withProvenance } from "@nudojs/core";
 import {
   absShapeForTsTypeText,
+  absTypeForTsAnnotation,
   absTypeForTsTypeText,
-  importedTypeTextsForSource,
+  sameFileAnnotationEnv,
+  typeParamEnvForFunction,
   keySetIncompleteAbs,
   markKeySetOpenAbs,
   type AnnotationEnv,
+  type ImportedTypeTables,
 } from "@nudojs/core/internal";
 
-const importedTypeMemo = new Map<string, ReadonlyMap<string, string>>();
-const IMPORTED_TYPE_MEMO_MAX = 32;
+/** 跨文件四张表都空 ⇒ 不给工厂造空底表。 */
+function importedEnvOf(tables: ImportedTypeTables): AnnotationEnv | undefined {
+  if (
+    tables.namedTexts.size === 0 &&
+    tables.namedNodes.size === 0 &&
+    tables.inlineTexts.size === 0 &&
+    tables.inlineNodes.size === 0
+  ) {
+    return undefined;
+  }
+  return {
+    namedTypes: tables.namedTexts,
+    namedTypeNodes: tables.namedNodes,
+    importTypes: tables.inlineTexts,
+    importTypeNodes: tables.inlineNodes,
+  };
+}
 
 /**
- * 同文件 + 相对导入的 type/interface 文本表（入口注解的跨文件解析）。
+ * service 侧**文件级注解环境工厂**（入口注解解析的唯一拼装点）。
  *
- * 只读相对说明符（`. / ..`）；包名 / 别名 / 目录索引用 Node 解析规则补齐
- * 扩展名。读不到 ⇒ 空表（调用方回落 any，不猜）。
+ * 跨文件类型声明表（具名导入 / inline import × 文本 / 节点，按被导入文件
+ * 签名失效）在前，同文件声明 / `typeof` 值表在后（同文件声明覆盖导入别名）
+ * ——合并与 core 消费方同一个工厂（`sameFileAnnotationEnv`）。`fnName` 给出
+ * 时附该函数的类型参数表。
  */
-export function importedTypeTextsForFile(
+export function annotationEnvForFile(
+  source: string,
+  filePath?: string,
+  fnName?: string,
+): AnnotationEnv {
+  const base = filePath ? importedEnvOf(importedTypeTablesFor(source, filePath)) : undefined;
+  const env = sameFileAnnotationEnv(source, base);
+  return fnName === undefined ? env : { ...env, typeParams: typeParamEnvForFunction(source, fnName) };
+}
+
+/**
+ * 返回注解 → Abs（**分析期**解析，带同文件 / 导入 / inline import / 值表）。
+ *
+ * dts 的 `tsDeclaredReturn` 只拿到投影上下文，没有源码；把声明 Abs 在分析期
+ * 算好随 `FunctionAnalysis` 带过去，才能做 declared-vs-observed 决议
+ * （BUG-422 的 `keyof User` / 具名别名 / 索引访问）。
+ */
+export function declaredReturnAbsFor(
+  node: unknown,
   source: string,
   filePath: string | undefined,
-): ReadonlyMap<string, string> {
-  if (!filePath) return new Map();
-  const key = `${filePath}\u0000${source}`;
-  const hit = importedTypeMemo.get(key);
-  if (hit) return hit;
-  const texts = importedTypeTextsForSource(source, (spec) =>
-    typeAnnotationSourceOf(spec, filePath),
+  fnName: string,
+): Abs | undefined {
+  const n = node as {
+    nudoReturnTypeNode?: unknown;
+    nudoReturnTypeText?: string;
+  } | undefined;
+  if (!n) return undefined;
+  return absTypeForTsAnnotation(
+    { text: n.nudoReturnTypeText, node: n.nudoReturnTypeNode },
+    annotationEnvForFile(source, filePath, fnName),
+    source,
   );
-  if (importedTypeMemo.size >= IMPORTED_TYPE_MEMO_MAX) {
-    const oldest = importedTypeMemo.keys().next().value;
-    if (oldest !== undefined) importedTypeMemo.delete(oldest);
-  }
-  importedTypeMemo.set(key, texts);
-  return texts;
 }
 
 /**

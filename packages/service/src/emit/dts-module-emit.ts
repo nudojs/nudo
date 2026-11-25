@@ -155,10 +155,15 @@ export function overloadExportGlue(
 ): string[] {
   switch (form.kind) {
     case "named":
-      // 声明本身带 `export` ⇒ 已是导出面成员；否则补一条导出语句
-      return declaredExported || !isJsBindingIdent(form.exportName)
-        ? []
-        : [`export { ${form.exportName} };`];
+      // 声明本身带 `export` ⇒ 已是导出面成员；否则补一条导出语句。
+      // BUG-416：named 形态同样要补 `form.extras`（重载 + `export { p as alias }`
+      // / default 的附加导出名），旧实现只在 alias / default 分支读 extras。
+      return [
+        ...(declaredExported || !isJsBindingIdent(form.exportName)
+          ? []
+          : [`export { ${form.exportName} };`]),
+        ...dtsExtraExportLines(form.exportName, form.extras),
+      ];
     case "alias":
       return [
         `export { ${form.localName} as ${form.exportNameRepr} };`,

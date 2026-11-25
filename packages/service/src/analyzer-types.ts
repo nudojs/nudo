@@ -62,15 +62,19 @@ export type FunctionAnalysis = {
   /** C4.1 形参表面：draft/契约对齐（解构 placeholder + bound 名） */
   formals?: FormalParam[];
   /**
-   * 「第三种」（2026-11-06）：源码**返回类型注解原文**（`strip-types.ts`
-   * 写在函数节点上的 `nudoReturnTypeText` 旁路）。此前全仓只有写入、无读取点。
+   * 源码**返回类型注解原文**（`strip-types.ts` 剥除类型时写在函数节点上的
+   * `nudoReturnTypeText` 旁路，经 `extractReturnAnnotation` 读回）。
    *
-   * 只透传文本，**不参与推断、不覆盖产物**：实现是事实，声明是断言。
-   * dts 投影面拿它做一致性校验，冲突落 `nudo:return-annotation-mismatch`
-   * 台账，产物恒用观测口径（避免 BUG-168 在形参位修掉的「两面相反」在
-   * 返回位复现）。缺省 = .js 源 / 未标注 ⇒ 零影响。
+   * 声明是**发布契约**：有注解 ⇒ dts 返回位按声明发布（与 tsc
+   * `--declaration` 同口径），观测只是某几次调用的取值。注解引用了产物里
+   * 不可解析的类型名 ⇒ 落 `nudo:dropped-type-annotation` 台账并回落观测；
+   * 声明与观测互斥 ⇒ 产物不改，只落 `nudo:return-annotation-mismatch` 台账
+   * （见 `dts-signature.ts` 的 `tsDeclaredReturn` / `returnAnnotationMismatch`）。
+   * 缺省 = .js 源 / 未标注 ⇒ 零影响。
    */
   declaredReturnType?: string;
+  /** 声明返回注解的 Abs（分析期解析；校验器返回位的定义域） */
+  declaredReturnAbs?: Abs;
   /** BUG-133：自由函数 `this: T` 接收者注解原文（dts 子句） */
   thisReceiverType?: string;
   cases: CaseResult[];

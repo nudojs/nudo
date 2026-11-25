@@ -7,7 +7,6 @@ import {
   hashSource,
   stableAnalyzeKeySource,
   stablePathKey,
-  semanticIndexEntryFaceSegment,
 } from "@nudojs/core/internal";
 import { defaultLoadModule } from "./load-module.ts";
 import { absStructureKey, type CallRecord } from "./evaluator/call-record.ts";
@@ -146,9 +145,6 @@ export function analysisFileCacheKey(
     // 同一名单不同顺序/重复不产生不同键
     auxKey:
       `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${envPreloadSeg}\0${abSeg}\0${depSeg}\0cm=${caseMode}` +
-      // ADR 0001 阶段 1 切片 3：check / service 共用的索引面状态。fallback
-      // 开关翻转时不得回放另一档 AnalysisResult（与 checkMemoKey 同纪律）。
-      `\0face=${semanticIndexEntryFaceSegment()}` +
       (alsoSynthesizeCases === undefined
         ? ""
         : alsoSynthesizeCases === true || !Array.isArray(alsoSynthesizeCases)

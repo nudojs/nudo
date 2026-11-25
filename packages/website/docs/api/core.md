@@ -341,7 +341,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$del"></a>`$del` | fn | object / member runtime | `$del: (o: Abs, key: Abs) => Abs` |
 | <a id="$elems"></a>`$elems` | fn | object / member runtime | `$elems(a: Abs): Abs[]` |
 | <a id="$eq"></a>`$eq` | fn | operator runtime | `$eq(a: Abs, b: Abs): Abs` |
-| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" \| "async" \| "generator" \| "async-generator"; optionalParams?: boolean[]; emptyBody?: boolean; predicate?: { paramIndex: number; typeOf: string } }, ): Abs` |
+| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" \| "async" \| "generator" \| "async-generator"; optionalParams?: boolean[]; emptyBody?: boolean; predicate?: { paramIndex: number; typeOf: string }; paramTypes?: Abs[]; returnType?: Abs }, ): Abs` |
 | <a id="$for"></a>`$for` | fn | control-flow lowering | `$for( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, body: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; loopVar?: () => Abs; }, ): Abs` |
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
 | <a id="$ge"></a>`$ge` | fn | operator runtime | `$ge(a: Abs, b: Abs): Abs` |
@@ -514,7 +514,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="falseconstraint"></a>`falseConstraint` | fn | — | `falseConstraint(c: Abs): Pred \| undefined` |
 | <a id="fnabs"></a>`FnAbs` | type | — | `FnAbs = Abs & { shape: { k: "fn"; params: string[]; name?: string; paramTypes?: Abs[]; returnType?: Abs; }; }` |
 | <a id="fnconstrainttoentryreqs"></a>`fnConstraintToEntryReqs` | fn | fn 约束 → 逐参约束表（contract 推导 / 入口签名消费）。 | `fnConstraintToEntryReqs( c: NudoConstraint, ): Array<{ param: string; constraint: NudoConstraint }>` |
-| <a id="formalparam"></a>`FormalParam` | type | C4.1：函数形参表面（contract surface）—— 侧车 `fn({…})` / `@nudo:contract` 参数名与求值形参的对齐基线。 | `FormalParam = \| { kind: "id"; name: string; index: number; tsType?: string; optional?: boolean; } \| { kind: "default"; name: string; inde...` |
+| <a id="formalparam"></a>`FormalParam` | type | C4.1：函数形参表面（contract surface）—— 侧车 `fn({…})` / `@nudo:contract` 参数名与求值形参的对齐基线。 | `FormalParam = \| { kind: "id"; name: string; index: number; tsType?: string; tsTypeNode?: unknown; optional?: boolean; } \| { kind: "defaul...` |
 | <a id="formalparamdisplaynames"></a>`formalParamDisplayNames` | fn | 求值/签名用形参名（与 analyzer extractParamNames / dts 对齐） | `formalParamDisplayNames(formals: FormalParam[]): string[]` |
 | <a id="formalparamsfromnodes"></a>`formalParamsFromNodes` | fn | — | `formalParamsFromNodes( params: AstParam[] \| undefined \| null, source?: string, ): FormalParam[]` |
 | <a id="formalparamsignaturenames"></a>`formalParamSignatureNames` | fn | 签名展示名（C4.1 #64）：解构形参渲染为 `{ grade, findings }`， 不落回求值占位 `_p0`——否则读签名的人以为没有契约。 | `formalParamSignatureNames(formals: FormalParam[]): string[]` |

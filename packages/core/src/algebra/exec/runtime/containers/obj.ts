@@ -269,6 +269,7 @@ function copyWithMemo(a: Abs, memo: WeakMap<object, Abs>): Abs {
     for (const el of s.elements) elements.push(copyWithMemo(el, memo));
     // rest 槽必须随快照迁移（与 hof snapshotAbs 同口径），否则副本丢尾段
     if (s.rest) (next.shape as Extract<Shape, { k: "tuple" }>).rest = copyWithMemo(s.rest, memo);
+    if (a.facets !== undefined) next.facets = cloneAbsFacets(a.facets);
     migrateInvariants(a, next);
     return next;
   }
@@ -276,6 +277,7 @@ function copyWithMemo(a: Abs, memo: WeakMap<object, Abs>): Abs {
     const next = abs({ k: "arr", element: unknown }, a.term, a.pred, a.conf);
     memo.set(a, next);
     (next.shape as Extract<Shape, { k: "arr" }>).element = copyWithMemo(s.element, memo);
+    if (a.facets !== undefined) next.facets = cloneAbsFacets(a.facets);
     migrateInvariants(a, next);
     return next;
   }
@@ -348,6 +350,7 @@ function copyWithMemo(a: Abs, memo: WeakMap<object, Abs>): Abs {
     }
     const impl = getFnImpl(a);
     if (impl) attachFnImpl(next, impl);
+    if (a.facets !== undefined) next.facets = cloneAbsFacets(a.facets);
     migrateUserFnSlots(a, next);
     migrateInvariants(a, next);
     // 侧表身份不得随副本丢失：null-proto 标记（`f.__proto__` 读 undefined）
@@ -367,6 +370,7 @@ function copyWithMemo(a: Abs, memo: WeakMap<object, Abs>): Abs {
     // BUG-172：类规格随值携带——快照副本必须继承（否则 fork 臂里的实例
     // 退回裸名回表，跨模块同名类再次串味）。
     carryClassSpec(a, next);
+    if (a.facets !== undefined) next.facets = cloneAbsFacets(a.facets);
     migrateInvariants(a, next);
     // 新鲜实例 id 随快照迁移（fork 副本 = 同一次创建事件）：否则
     // `a === new C()` 从 false 退化成 unknown（同 fn 分支的缺口）。
@@ -382,6 +386,7 @@ function copyWithMemo(a: Abs, memo: WeakMap<object, Abs>): Abs {
     memo.set(a, next);
     (next.shape as Extract<Shape, { k: "eff" }>).inner = copyWithMemo(s.inner, memo);
     if (s.rejected) (next.shape as Extract<Shape, { k: "eff" }>).rejected = copyWithMemo(s.rejected, memo);
+    if (a.facets !== undefined) next.facets = cloneAbsFacets(a.facets);
     migrateInvariants(a, next);
     return next;
   }
@@ -389,6 +394,7 @@ function copyWithMemo(a: Abs, memo: WeakMap<object, Abs>): Abs {
     const next = abs({ k: "sum", members: [] }, a.term, a.pred, a.conf);
     memo.set(a, next);
     (next.shape as Extract<Shape, { k: "sum" }>).members = s.members.map((m) => copyWithMemo(m, memo));
+    if (a.facets !== undefined) next.facets = cloneAbsFacets(a.facets);
     // 所有可能挂 extState/propFlags 的形状都必须迁移不变性侧表（与
     // tuple/arr/obj/fn/brand 同口径）：入口声明域标记（objects.ts 的
     // markEntryDomainAbs）就挂在 sum 上——fork/调用边界快照丢标记会把

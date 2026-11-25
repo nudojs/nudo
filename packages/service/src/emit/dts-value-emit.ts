@@ -41,6 +41,21 @@ export type DtsValueEmitDeps = {
   ) => T;
 };
 
+/** enum 声明文本（导出 enum 与非导出 enum 共用同一渲染）。 */
+function enumDeclarationText(local: string, value: DtsModuleSurface["values"] extends Map<string, infer V> ? V : never): string {
+  const v = value as { enumMembers?: Array<{ name: string; init?: string }>; constEnum?: boolean };
+  const body = (v.enumMembers ?? [])
+    .map(
+      (m) =>
+        `  ${isJsBindingIdent(m.name) ? m.name : JSON.stringify(m.name)}${
+          m.init !== undefined ? ` = ${m.init}` : ""
+        },`,
+    )
+    .join("\n");
+  const constKw = v.constEnum ? "const " : "";
+  return `declare ${constKw}enum ${local} {${body ? `\n${body}\n` : ""}}`;
+}
+
 export function dtsValueDeclarations(
   surface: DtsModuleSurface | undefined,
   values: ReadonlyMap<string, Abs> | undefined,
@@ -70,20 +85,7 @@ export function dtsValueDeclarations(
     const abs = values?.get(local);
     let decl: string;
     if (value.kind === "enum") {
-      // 成员带上**字面量**初始化器（字符串 enum 的成员类型是字面量类型：
-      // 丢掉 `= "a"` 会把它变成数值 enum ⇒ 消费端的 `Mode.A` 类型语义反转）。
-      const body = (value.enumMembers ?? [])
-        .map(
-          (m) =>
-            `  ${isJsBindingIdent(m.name) ? m.name : JSON.stringify(m.name)}${
-              m.init !== undefined ? ` = ${m.init}` : ""
-            },`,
-        )
-        .join("\n");
-      // Bug 25：`export const enum` ⇒ `declare const enum`（与 tsc
-      // `--declaration` 同形；否则消费端生成运行时 import、运行时 SyntaxError）。
-      const constKw = value.constEnum ? "const " : "";
-      decl = `declare ${constKw}enum ${local} {${body ? `\n${body}\n` : ""}}`;
+      decl = enumDeclarationText(local, value);
     } else {
       // BUG-130：源码注解优先于观测（`export let l: number` 没有初始化器，
       // 注解是唯一类型来源）；引用不可解析名 ⇒ 不采用并落台账。
@@ -181,6 +183,14 @@ export function dtsValueDeclarations(
     out.push(decl);
     out.push(`export { ${local} as ${exportNameRepr(primary)} };`);
     out.push(...names.slice(1).map((n) => `export { ${local} as ${exportNameRepr(n)} };`));
+  }
+  // BUG-453：非导出 enum 可能被公开签名引用（`f(): E`）；tsc 发
+  // `declare enum E`。补模块局部声明（无 `export`，不泄漏 API）。
+  for (const [local, value] of surface.values) {
+    if (value.kind !== "enum") continue;
+    if (dtsExportNamesOf(surface, local).length > 0) continue;
+    if (surface.classes.has(local)) continue;
+    out.push(enumDeclarationText(local, value));
   }
   return out;
 }

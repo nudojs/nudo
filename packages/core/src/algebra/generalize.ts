@@ -67,7 +67,7 @@ import { $invoke, $staticInvoke } from "./exec/class.ts";
 import { isNudoThrow } from "./exec/nudo-throw.ts";
 import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
 import { resolveExportSlotCall } from "./contract/export-slot.ts";
-import { absShapeForTsTypeText, absTypeForTsTypeText, namedTypeTextsForSource, valueTypeTextsForSource, type AnnotationEnv } from "./contract/ts-type-shape.ts";
+import { absTypeForTsAnnotation, sameFileAnnotationEnv, type AnnotationEnv, type AnnotationEnvArg } from "./contract/ts-type-shape.ts";
 
 /**
  * generalize 的 evaluator 模块执行缓存（按 source；run 不依赖实参）。
@@ -285,21 +285,27 @@ function annotationAbsOf(shape: Shape | undefined, term?: Term): Abs {
 }
 
 /**
- * 声明类型**文本** → 入口 Abs（不可映射 / 无注解 ⇒ any）。
+ * 声明类型 → 入口 Abs（不可映射 / 无注解 ⇒ any）。
  *
  * 与 {@link annotationAbsOf} 的差别只在输入侧：这里直接吃 Abs 级映射
- * （`absTypeForTsTypeText`），因此 `null` / `undefined` / `void` 的字面量
- * 精度（lit term）能带进入口域——`x: string | null` 不再因为一个可空成员
- * 整条退 any（否则 check / `--json` / LSP 报 any，而同一份产物的 dts 形参位
- * 仍印 `string | null`）。
+ * （{@link absTypeForTsAnnotation}，节点优先、文本兜底），因此 `null` /
+ * `undefined` / `void` 的字面量精度（lit term）能带进入口域——
+ * `x: string | null` 不再因为一个可空成员整条退 any（否则 check / `--json` /
+ * LSP 报 any，而同一份产物的 dts 形参位仍印 `string | null`）。
  */
 function annotationAbsForText(
   text: string | undefined,
   term?: Term,
   env?: AnnotationEnv,
+  node?: unknown,
+  source?: string,
 ): Abs {
-  const mapped = absTypeForTsTypeText(text, env);
-  if (!mapped) return abs({ k: "any" }, term, pTrue, "path");
+  const mapped = absTypeForTsAnnotation({ text, node }, env, source);
+  return mapped ? entryAbsOfMapped(mapped, term) : abs({ k: "any" }, term, pTrue, "path");
+}
+
+/** 已映射的声明类型 → 入口 Abs（path 置信、declared 来源、开放键集、入口域标记）。 */
+function entryAbsOfMapped(mapped: Abs, term?: Term): Abs {
   const base = abs(mapped.shape, mapped.term ?? term, pTrue, "path");
   const mappedFacets = mapped.facets ? { ...base, facets: mapped.facets } : base;
   const annotated = markOpenObjSlots(withProvenance(mappedFacets, "declared"));
@@ -345,28 +351,24 @@ export function buildEntryDomain(
     termFor?: (f: FormalParam, index: number) => Term | undefined;
   } = {},
 ): EntryDomain {
+  // 文件级注解环境：同文件声明 / `typeof` 值表由工厂一次解析，调用方的导入表作底。
   const env: AnnotationEnv = {
-    ...opts.annotationEnv,
+    ...sameFileAnnotationEnv(source, opts.annotationEnv),
     typeParams: typeParamEnvOf(source, fnName),
-    namedTypes: new Map([
-      ...(opts.annotationEnv?.namedTypes ?? []),
-      ...namedTypeTextsForSource(source),
-    ]),
-    valueTypes: new Map([
-      ...(opts.annotationEnv?.valueTypes ?? []),
-      ...valueTypeTextsForSource(source),
-    ]),
   };
   const file = opts.file ?? babelParse(source);
   const paramNodes = opts.paramNodes ?? fnParamNodesOf(file, fnName);
   const unresolved: string[] = [];
   const params: EntryParamDomain[] = formals.map((f, i) => {
     const term = opts.termFor?.(f, i);
-    const declared =
-      f.tsType === undefined
-        ? abs({ k: "any" }, term, pTrue, "path")
-        : annotationAbsForText(f.tsType, term, env);
-    if (f.tsType !== undefined && absTypeForTsTypeText(f.tsType, env) === undefined) {
+    const mappedAbs =
+      f.tsType === undefined && f.tsTypeNode === undefined
+        ? undefined
+        : absTypeForTsAnnotation({ text: f.tsType, node: f.tsTypeNode }, env, source);
+    const declared = mappedAbs
+      ? entryAbsOfMapped(mappedAbs, term)
+      : abs({ k: "any" }, term, pTrue, "path");
+    if (f.tsType !== undefined && mappedAbs === undefined) {
       unresolved.push(`${"name" in f ? f.name : f.placeholder}: ${f.tsType}`);
     }
     let domainAbs = declared;
@@ -396,7 +398,7 @@ export function buildEntryDomain(
         : optionalAbs;
     const evalArgs =
       f.kind === "rest"
-        ? symbolicRestArgsOf(f.tsType, env.typeParams, env.namedTypes)
+        ? symbolicRestArgsOf(f.tsType, env, f.tsTypeNode, source)
         : [domainAbs];
     return {
       name: "name" in f ? f.name : f.placeholder,
@@ -444,12 +446,39 @@ function withOptionalUndefined(a: Abs, f: FormalParam | undefined): Abs {
  *
  * 构造器形参的注解本来就在形参面上（`FormalParam.tsType`，与类入口签名同源，
  * 含参数属性 `constructor(private size: number)`）⇒ **注解即域**：有注解按
- * {@link absShapeForTsTypeText} 映射，无注解才补 `any`（与普通入口「未约束 =
+ * {@link absTypeForTsAnnotation} 映射（节点优先），无注解才补 `any`（与普通入口「未约束 =
  * any」同口径，不是 unknown）。
  *
  * 参数属性在本仓的默认解析下已糖化成 `this.<name> = <name>` 赋值 ⇒ 实参带上
  * 注解后槽位自然得到域，不需要另建播种通道。
  */
+/**
+ * BUG-435：构造器参数属性 / 默认形参的初始化式域。
+ *
+ * `constructor(public z = 1)` 的 `z` 在 TS 里是 `number`（默认值拓宽），
+ * 此前 `ctorParamAbsArgs` 只看注解 ⇒ 无注解默认值落 any ⇒ `this.z + 1`
+ * 记假 may-throw。与普通形参 `defaultParamInitDomainOf` 同口径。
+ */
+function ctorParamDefaultDomainOf(
+  fileAst: ReturnType<typeof babelParse>,
+  clsName: string,
+  paramName: string,
+): Abs | undefined {
+  for (const raw of ctorParamNodesOf(fileAst, clsName)) {
+    let p = raw as { type?: string; parameter?: unknown };
+    if (p?.type === "TSParameterProperty") p = p.parameter as { type?: string };
+    const ap = p as
+      | { type?: string; left?: { type?: string; name?: string }; right?: unknown }
+      | undefined;
+    if (ap?.type !== "AssignmentPattern" || ap.left?.type !== "Identifier" || ap.left.name !== paramName) {
+      continue;
+    }
+    const init = defaultEntryAbsOf(ap.right);
+    return init ? widenForAssign(init) : undefined;
+  }
+  return undefined;
+}
+
 export function ctorParamAbsArgs(
   fileAst: ReturnType<typeof babelParse>,
   clsName: string,
@@ -457,15 +486,17 @@ export function ctorParamAbsArgs(
   source?: string,
 ): Abs[] {
   const env: AnnotationEnv | undefined = source
-    ? {
-        typeParams: typeParamEnvOf(source, clsName),
-        namedTypes: namedTypeTextsForSource(source),
-        valueTypes: valueTypeTextsForSource(source),
-      }
+    ? { ...sameFileAnnotationEnv(source), typeParams: typeParamEnvOf(source, clsName) }
     : undefined;
   return ctorFormalsOf(fileAst, clsName, source).map((f) => {
-    const abs = annotationAbsForText(f.tsType, undefined, env);
-    return withOptionalUndefined(abs, f);
+    const domainAbs =
+      f.tsType !== undefined
+        ? annotationAbsForText(f.tsType, undefined, env, f.tsTypeNode, source)
+        : f.kind === "default"
+          ? ctorParamDefaultDomainOf(fileAst, clsName, f.name) ??
+            abs({ k: "any" }, undefined, pTrue, "path")
+          : abs({ k: "any" }, undefined, pTrue, "path");
+    return withOptionalUndefined(domainAbs, f);
   });
 }
 
@@ -674,25 +705,21 @@ function classEntryPolyFn(
   const formals = ctorFormalsOf(fileAst, fnName, source);
   const params = formals.length > 0 ? formalParamSignatureNames(formals) : [];
   const annotationEnv: AnnotationEnv = {
-    ...opts.annotationEnv,
+    ...sameFileAnnotationEnv(source, opts.annotationEnv),
     typeParams: typeParamEnvOf(source, fnName),
-    namedTypes: new Map([
-      ...(opts.annotationEnv?.namedTypes ?? []),
-      ...namedTypeTextsForSource(source),
-    ]),
-    valueTypes: new Map([
-      ...(opts.annotationEnv?.valueTypes ?? []),
-      ...valueTypeTextsForSource(source),
-    ]),
   };
   const typeParams: TypeParam[] = formals.map((f, i) => {
-    // 构造器形参的 TS 声明类型（无注解 ⇒ 无约束 any，与普通入口同口径）
+    // 构造器形参的 TS 声明类型（无注解 ⇒ 默认值域 / 无约束 any，与普通入口同口径）
+    const domainAbs =
+      f.tsType !== undefined
+        ? annotationAbsForText(f.tsType, undefined, annotationEnv, f.tsTypeNode, source)
+        : f.kind === "default"
+          ? ctorParamDefaultDomainOf(fileAst, fnName, f.name) ??
+            abs({ k: "any" }, undefined, pTrue, "path")
+          : abs({ k: "any" }, undefined, pTrue, "path");
     return {
       id: `A${i + 1}`,
-      value: withOptionalUndefined(
-        annotationAbsForText(f.tsType, undefined, annotationEnv),
-        f,
-      ),
+      value: withOptionalUndefined(domainAbs, f),
     };
   });
   return {
@@ -1862,13 +1889,12 @@ function defaultParamInitDomainOf(
  */
 function symbolicRestArgsOf(
   tsType: string | undefined,
-  typeParams: ReadonlyMap<string, Abs> | undefined,
-  namedTypes: ReadonlyMap<string, string> | undefined,
+  env: AnnotationEnvArg,
+  node?: unknown,
+  source?: string,
 ): Abs[] {
   const sentinel = makeSymbolicRestAbs();
-  const declared = tsType
-    ? absTypeForTsTypeText(tsType, { typeParams, namedTypes })
-    : undefined;
+  const declared = absTypeForTsAnnotation({ text: tsType, node }, env, source);
   const shape = declared?.shape;
   if (shape?.k === "arr") return [{ ...sentinel, shape }];
   if (shape?.k === "tuple") {
@@ -1892,11 +1918,10 @@ export function entryEvalArgsOf(g: PolyFn, source: string): Abs[] {
   // 成 builder 的初始 entryArgs，否则侧车契约收窄的形参在 L2 面又退回 any。
   const restIdx = g.formals?.findIndex((f) => f.kind === "rest") ?? -1;
   if (restIdx < 0 || !g.formals) return g.typeParams.map((t) => t.value);
-  const env = typeParamEnvOf(source, g.name);
-  const named = namedTypeTextsForSource(source);
+  const env: AnnotationEnv = { ...sameFileAnnotationEnv(source), typeParams: typeParamEnvOf(source, g.name) };
   return g.typeParams.flatMap((t, i) =>
     i === restIdx
-      ? symbolicRestArgsOf(g.formals?.[i]?.tsType, env, named)
+      ? symbolicRestArgsOf(g.formals?.[i]?.tsType, env, g.formals?.[i]?.tsTypeNode, source)
       : [t.value],
   );
 }
@@ -1948,7 +1973,7 @@ function typeParamEnvOf(source: string, fnName: string): ReadonlyMap<string, Abs
         ? source.slice(c.start, c.end)
         : undefined;
     const base =
-      (text ? absTypeForTsTypeText(text) : undefined) ??
+      absTypeForTsAnnotation({ text, node: c }, undefined, source) ??
       abs({ k: "any" }, undefined, undefined, "exact");
     // 类型参数名用 term 命名空间承载（`tp:T`）：formatShape 可还原名字，
     // 但 facets 仍遵守 ABS-15（不参与展示 / 等价）。
@@ -2181,11 +2206,13 @@ export function entryThisReceiverOf(
     type?: string;
     name?: string;
     nudoTypeText?: string;
+    nudoTypeNode?: unknown;
     typeAnnotation?: { typeAnnotation?: { start?: number; end?: number } };
   };
   const params = fnParamNodesOf(fileAst ?? babelParse(source), fnName) as ThisNode[];
   let node = params.find((p) => p?.type === "Identifier" && p.name === "this");
   let typeText = node?.nudoTypeText;
+  let annNode: unknown = node?.nudoTypeNode;
   let keepAst: ReturnType<typeof babelParse> | undefined;
   if (!node && /\bthis\s*:/.test(source)) {
     // stripTypes 会把 `this: T` 形参整体从 AST 剥掉（它不占运行时形参位）——
@@ -2198,14 +2225,22 @@ export function entryThisReceiverOf(
     const ann = node?.typeAnnotation?.typeAnnotation;
     if (ann && typeof ann.start === "number" && typeof ann.end === "number") {
       typeText = source.slice(ann.start, ann.end);
+      annNode = ann;
     }
   }
   if (!node) return finish(undefined);
-  // 命名 interface / type alias：从保留 TS 节点的 AST 取成员面（方法与属性
-  // 槽）——`this.area()` 才能按契约 total 而不是「any 上的方法调用」。
+  // 注解映射节点优先（同文件具名声明经注解环境工厂解析）；映射不到才走
+  // 具名 interface / type alias 的**成员面**（方法与属性槽；整条声明映射不到
+  // ——带类型参数、含条件类型等——时逐成员兜底，映射不到的成员落 any）
+  // ——`this.area()` 才能按契约 total 而不是「any 上的方法调用」。
   const named = typeText?.trim();
   const declShape = named && keepAst ? tsTypeDeclShape(keepAst, named, source) : undefined;
-  const shape = declShape ?? absShapeForTsTypeText(typeText);
+  const nodeShape = absTypeForTsAnnotation(
+    { text: typeText, node: annNode },
+    sameFileAnnotationEnv(source),
+    source,
+  )?.shape;
+  const shape = nodeShape ?? declShape;
   // BUG-239：`open: true` 是**键集开放**（结构可接受额外键），不是「成员不可
   // 判」——内联对象注解 `this: { x: number }` 与具名 interface 是同一个 TS
   // 类型，成员槽完整可映射 ⇒ 必须可用（否则 `this.x` 落在 any 上记假
@@ -2235,12 +2270,18 @@ function tsTypeDeclShape(
   source: string,
 ): Shape | undefined {
   const name = typeName.trim();
+  // 成员注解同样是节点优先（同文件具名声明经工厂解析；`created: Date` 这类
+  // 成员此前走裸文本面 ⇒ 落 any）。节点不可用时回落源码切片的文本面。
+  const env = sameFileAnnotationEnv(source);
   const nodeOf = (n: unknown): Shape | undefined => {
     if (!n || typeof (n as { start?: unknown }).start !== "number" || typeof (n as { end?: unknown }).end !== "number") {
       return undefined;
     }
-    const t = absShapeForTsTypeText(source.slice((n as { start: number }).start, (n as { end: number }).end));
-    return t;
+    return absTypeForTsAnnotation(
+      { text: source.slice((n as { start: number }).start, (n as { end: number }).end), node: n },
+      env,
+      source,
+    )?.shape;
   };
   const typeAbs = (n: unknown): Abs => {
     const sh = nodeOf(n);
@@ -2949,8 +2990,9 @@ function generalizeFromAstUncached(
           i === restIdxForArgs
             ? symbolicRestArgsOf(
                 formals[i]?.tsType,
-                entryDomain.env.typeParams,
-                entryDomain.env.namedTypes,
+                entryDomain.env,
+                formals[i]?.tsTypeNode,
+                source,
               )
             : [t.value],
         );
@@ -3208,9 +3250,8 @@ export function buildArgsFromAssume(
   const extracted = extractFn(source, fnName);
   if (!extracted) return [];
   const annotationEnv: AnnotationEnv = {
+    ...sameFileAnnotationEnv(source),
     typeParams: typeParamEnvOf(source, fnName),
-    namedTypes: namedTypeTextsForSource(source),
-    valueTypes: valueTypeTextsForSource(source),
   };
   let defaultAst: ReturnType<typeof babelParse> | undefined;
   return extracted.params.map((p, i) => {
@@ -3231,7 +3272,7 @@ export function buildArgsFromAssume(
       if (init !== undefined) return markEntryDomainAbs(init);
     }
     return withOptionalUndefined(
-      annotationAbsForText(formal?.tsType, termVar(p), annotationEnv),
+      annotationAbsForText(formal?.tsType, termVar(p), annotationEnv, formal?.tsTypeNode, source),
       formal,
     );
   });

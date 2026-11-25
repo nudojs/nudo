@@ -11,6 +11,7 @@
     "lint:tests": "tsc --noEmit -p tsconfig.test-lint.json",
     "lint:hygiene": "node scripts/check-hygiene.mjs && node scripts/check-aliases.mjs && node scripts/check-core-subdomains.mjs && node scripts/check-changeset-notes.mjs && node scripts/check-fs-input-tests.mjs && node scripts/check-test-names.mjs && node scripts/check-test-structure.mjs",
     "check:diff-face": "node scripts/check-diff-face.mjs",
+    "face:matrix": "tsx scripts/face-matrix.ts",
     "nudo": "tsx packages/nudojs/src/index.ts",
     "check": "tsx packages/nudojs/src/index.ts check",
     "test:cli": "tsx packages/nudojs/src/index.ts test",

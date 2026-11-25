@@ -6,7 +6,6 @@
  * 环与超深结构发合法的截断标记；不存在旧渲染器回落。
  */
 import {
-  abs as makeAbs,
   extStateOf,
   joinAbs,
   litValue,
@@ -15,6 +14,7 @@ import {
   type Abs,
   type LiteralValue,
 } from "@nudojs/core";
+import { widenTopLevelAbs } from "./abs-widen.ts";
 import {
   escapeTemplateTypeFixed,
   formatObjectKey,
@@ -159,29 +159,6 @@ export type DtsTypeOpts = {
   budget?: ProjectionBudget;
 };
 
-/** 返回位协变 widen：顶层（含 sum 成员）标量字面量 → 基类型。 */
-function widenTopLevelDts(a: Abs): Abs {
-  if (a.shape.k === "sum") {
-    return makeAbs(
-      { k: "sum", members: a.shape.members.map(widenTopLevelDts) },
-      undefined,
-      undefined,
-      a.conf,
-    );
-  }
-  if (a.term?.op !== "lit" || a.shape.k !== "prim") return a;
-  const v = a.term.value;
-  if (
-    typeof v === "number" ||
-    typeof v === "string" ||
-    typeof v === "boolean" ||
-    typeof v === "bigint"
-  ) {
-    return makeAbs(a.shape, undefined, undefined, a.conf);
-  }
-  return a;
-}
-
 /**
  * 生成器 / 迭代器协议对象 → Generator / AsyncGenerator / IterableIterator。
  * 返回 undefined = 不是迭代器。
@@ -209,13 +186,13 @@ function iteratorDtsType(a: Abs, opts: DtsTypeOpts): DtsType | undefined {
     } catch {
       joined = elems[0]!;
     }
-    elemType = dtsTypeOfAbs(widenTopLevelDts(joined), opts);
+    elemType = dtsTypeOfAbs(widenTopLevelAbs(joined), opts);
   }
   const tReturn = a.facets?.genReturn
-    ? dtsTypeOfAbs(widenTopLevelDts(a.facets.genReturn), opts)
+    ? dtsTypeOfAbs(widenTopLevelAbs(a.facets.genReturn), opts)
     : undefined;
   const tNext = a.facets?.genNext
-    ? dtsTypeOfAbs(widenTopLevelDts(a.facets.genNext), opts)
+    ? dtsTypeOfAbs(widenTopLevelAbs(a.facets.genNext), opts)
     : undefined;
 
   const args: DtsType[] = [elemType];
@@ -289,7 +266,7 @@ function dtsTypeOfAbsInner(a: Abs, opts: DtsTypeOpts): DtsType {
           ? { kind: "literal", text: String(v) }
           : { kind: "prim", name: "number" };
       }
-      if (typeof v === "bigint") return { kind: "prim", name: "bigint" };
+      if (typeof v === "bigint") return { kind: "literal", text: `${String(v)}n` };
     }
   }
 

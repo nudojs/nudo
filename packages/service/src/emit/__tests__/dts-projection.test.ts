@@ -906,7 +906,9 @@ export function f() { return 1; }
   it("发射 default 值绑定（改前整条消失）；消费端 `import v from` 通过 tsc（改前 TS1192）", () => {
   {
     const dts = moduleDts(SRC);
-    expect(dts).toContain("declare const _default: number;");
+    // BUG-415：default 通道与具名 const 同挂字面量闸门 ⇒ `42`（tsc 逐字），
+    // 不再是拓宽后的 `number`。
+    expect(dts).toContain("declare const _default: 42;");
     expect(dts).toContain("export { _default as default };");
   }
   {
@@ -3227,5 +3229,22 @@ export const n = inferred.f("abc");
       "/test/j-inferred.ts",
     );
     expect(dts).toContain("(y: string) => 3");
+  });
+
+  it("BUG-489 非导出顶层声明不被隐式导出（export {} 模块标记）", () => {
+    const dts = allDts(
+      `class Hidden { m(): number { return 1; } }
+interface HiddenI { a: number }
+export function take(x: HiddenI): number { return x.a; }
+`,
+      "/test/j-marker.ts",
+    );
+    expect(dts).toContain("export {};");
+    const check = tscNoEmit({
+      "mod.d.ts": dts,
+      "use.ts": 'import { Hidden } from "./mod.js";\nconst h = new Hidden();\nexport { h };\n',
+    });
+    expect(check.ok).toBe(false);
+    expect(check.stderr).toMatch(/TS2305|TS2724/);
   });
 });

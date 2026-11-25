@@ -32,7 +32,6 @@ import {
   suggestedCallsCeiling,
   suggestedDepthCeiling,
   suggestedForkCeiling,
-  semanticIndexEntryFaceSegment,
   hashSource,
   stableAnalyzeKeySource,
 } from "@nudojs/core/internal";
@@ -90,11 +89,11 @@ import {
   resolveFunctionNode,
   fnNameLoc,
   collectTopLevelFunctions,
-  recordServiceEntryFace,
   findSingleModuleExportsFunction,
   collectBindings,
   buildNodeTypeMap,
 } from "./analyzer-ast.ts";
+import { declaredReturnAbsFor } from "./ts-annotation.ts";
 import {
   validateMockDirectives,
   dedupeCallRecords,
@@ -562,9 +561,6 @@ export function analyzeFileUncachedInner(
   // noDeclaration 分类（类方法作用域名 "C.m" 落到 dts 投影上 → 产出
   // `export declare function C.m(...)` 这种非法 TS，#494）。
   const topLevelFns = collectTopLevelFunctions(ast);
-  // ADR 0001 阶段 1 · 切片 2：与 core 绑定索引做只读对照（默认关闭、零开销）。
-  // 普查结果本身不改写 ⇒ 分析面门禁结论不变。
-  recordServiceEntryFace(ast, topLevelFns);
   const noDeclByNode = new Map<Node, boolean>();
   const noDeclByName = new Map<string, boolean>();
   for (const t of topLevelFns) {
@@ -632,6 +628,9 @@ export function analyzeFileUncachedInner(
     // 据此保留源码里写下的类型。
     const formals = extractFormals(fn.node, source);
     const declaredReturnType = extractReturnAnnotation(fn.node);
+    const declaredReturnAbs = declaredReturnType
+      ? declaredReturnAbsFor(fn.node, source, filePath, fn.name)
+      : undefined;
     // BUG-133：`this: T` 接收者注解（strip 后 AST 不可见，helper 自己 keepTs；
     // 每文件的 keepTs 查询经 thisReceiverTypeOf 缓存 / 正则闸门）
     const thisReceiverType = thisReceiverTypeOf(fn.name);
@@ -641,6 +640,7 @@ export function analyzeFileUncachedInner(
       paramNames,
       ...(formals.length > 0 ? { formals } : {}),
       ...(declaredReturnType ? { declaredReturnType } : {}),
+      ...(declaredReturnAbs ? { declaredReturnAbs } : {}),
       ...(thisReceiverType ? { thisReceiverType } : {}),
       cases: [],
     };
@@ -732,8 +732,6 @@ export function analyzeFileUncachedInner(
             analysisFnKey,
             fnDepSeg ?? "-",
             `cm=${caseMode}`,
-            // ADR 0001 切片 3：索引面 / 旧面两档互不回放（文件级键同纪律）。
-            `face=${semanticIndexEntryFaceSegment()}`,
             // 自定义 loadModule（LSP buffer-aware）与默认磁盘加载器产出的分析
             // 不同 ⇒ 两档互不回放（与文件级键的 lm 段同口径：本段此前只有文件级
             // 键有，逐函数快照会被另一个加载器复用）。
@@ -881,6 +879,9 @@ export function analyzeFileUncachedInner(
     if (directiveFnStmts.has(stmt)) continue;
     const synthFormals = extractFormals(node, source);
     const synthReturnAnnotation = extractReturnAnnotation(node);
+    const synthReturnAbs = synthReturnAnnotation
+      ? declaredReturnAbsFor(node, source, filePath, name)
+      : undefined;
     const synthThisReceiverType = thisReceiverTypeOf(name);
     const analysis: FunctionAnalysis = {
       name,
@@ -890,6 +891,7 @@ export function analyzeFileUncachedInner(
       // 看不到 `.ts` 源的声明类型。形参表面与 paramNames 同源（下标对齐）。
       ...(synthFormals.length > 0 ? { formals: synthFormals } : {}),
       ...(synthReturnAnnotation ? { declaredReturnType: synthReturnAnnotation } : {}),
+      ...(synthReturnAbs ? { declaredReturnAbs: synthReturnAbs } : {}),
       ...(synthThisReceiverType ? { thisReceiverType: synthThisReceiverType } : {}),
       cases: [],
     };

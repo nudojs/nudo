@@ -340,6 +340,24 @@ export function projectModuleDtsInner(
     if (converted) lines.push(`export = ${dtsIdentifier(target)};`);
   }
 
+  // BUG-473：ambient `declare function f` + `export = f` —— 函数没有值声明
+  // / 类声明可转换，但声明已在 typeDeclarations 镜像；补胶水行。
+  if (
+    surface?.exportEquals !== undefined &&
+    surface.exportEquals.local !== "" &&
+    !lines.some((l) => l.startsWith("export = "))
+  ) {
+    const target = surface.exportEquals.local;
+    const declared =
+      surface.functionOverloads?.has(target) === true ||
+      surface.values.has(target) ||
+      surface.classes.has(target) ||
+      (surface.typeDeclarations ?? []).some((t) =>
+        new RegExp(`\\b(?:declare\\s+)?function\\s+${target}\\b`).test(t),
+      );
+    if (declared) lines.push(`export = ${dtsIdentifier(target)};`);
+  }
+
   // ── namespace 声明（BUG-191）──
   // `export namespace NS { export const x: number = 1 }` 在运行时是真实对象
   // （求值器把 NS.x 物化出来），但旧实现只发射函数/类/值声明 ⇒ 产物里没有 NS
@@ -478,7 +496,29 @@ export function projectModuleDtsInner(
   // ── 再导出面 ──
   if (surface) for (const r of surface.reexports) lines.push(r);
 
-  return { lines: [...importLines, ...ledger, ...lines], params };
+  const body = [...importLines, ...ledger, ...lines];
+  // BUG-489：`.d.ts` 若没有任何模块标记，非导出的顶层 `declare class` /
+  // `interface` / `declare namespace` 会被消费方当成模块公开导出（TS 的
+  // ambient 声明在非模块脚本里是全局 / 在无 `export {}` 的边界下被 `import`
+  // 解析到）。补一个显式空导出；`export =` 形态不能与其它导出共存，跳过。
+  const hasExportEquals = body.some((l) => /^\s*export\s*=/.test(l));
+  const hasModuleMarker = body.some((l) => /^\s*export\s*\{\s*\}\s*;?\s*$/.test(l));
+  // 只有存在**未导出的顶层声明**时才需要空导出：它们在没有模块标记的
+  // 边界会被 `import` 解析到（BUG-489）。全是 `export` 声明时，文件本身
+  // 已是模块，补 marker 只会改变文本、无行为收益。
+  const unexportedDecl =
+    /^(?:declare\s+)?(?:class|function|const|let|var|enum|namespace|module|interface|type)\b/;
+  const hasUnexportedTopLevel = body.some((l) => {
+    const t = l.trim();
+    return unexportedDecl.test(t) && !t.startsWith("export ");
+  });
+  return {
+    lines:
+      hasExportEquals || hasModuleMarker || !hasUnexportedTopLevel
+        ? body
+        : [...body, "export {};"],
+    params,
+  };
 }
 
 /**
@@ -675,6 +715,26 @@ function overlayObjectFnAnnotations(
       changed = true;
     }
   }
+  // BUG-475：带点路径的注解（`inner.fn`）递归到嵌套对象槽。
+  const nestedGroups = new Map<string, DtsObjectFnAnnotation[]>();
+  for (const ann of annotations ?? []) {
+    const dot = ann.key.indexOf(".");
+    if (dot <= 0) continue;
+    const head = ann.key.slice(0, dot);
+    const rest = ann.key.slice(dot + 1);
+    const list = nestedGroups.get(head) ?? [];
+    list.push({ ...ann, key: rest });
+    nestedGroups.set(head, list);
+  }
+  for (const [head, list] of nestedGroups) {
+    const slot = slots[head];
+    if (!slot || slot.value.shape.k !== "obj") continue;
+    const nested = overlayObjectFnAnnotations(slot.value, list, surface, refs, analyzedReturns);
+    if (nested !== slot.value) {
+      slots[head] = { ...slot, value: nested };
+      changed = true;
+    }
+  }
   // BUG-381：无注解的成员也要用**分析返回**（成员自己的 fn 条目）补返回位，
   // 不能只依赖 `fnMemberAnnotations`（对象属性箭头没有 AST 成员注解条目）。
   for (const [member, ret] of analyzedReturns ?? []) {
@@ -704,21 +764,22 @@ function overlayObjectFnAnnotations(
       fnChanged = true;
     });
     let returnType = fn.shape.returnType;
-    if (returnType === undefined && ann.returnType === undefined) {
-      // BUG-381：成员自己的分析已给出返回域（`fn f => number exact`）。
-      const analyzed = analyzedReturns?.get(ann.key);
-      if (analyzed !== undefined) {
-        returnType = analyzed;
-        fnChanged = true;
-      }
-    }
-    if (returnType === undefined && ann.returnType !== undefined) {
+    // 源码返回注解是发布契约：即使观测已有 `unknown` / 窄类型也优先采用
+    // （与 `tsDeclaredReturn` 的「声明可发布 ⇒ 发布声明」决议同口径）。
+    if (ann.returnType !== undefined) {
       if (safeValueAnnotation(ann.returnType, surface, refs).unresolved === undefined) {
         const shape = tsAnnotationShape(ann.returnType);
         if (shape) {
           returnType = makeAbs(shape, undefined, undefined, "path");
           fnChanged = true;
         }
+      }
+    } else if (returnType === undefined) {
+      // BUG-381：成员自己的分析已给出返回域（`fn f => number exact`）。
+      const analyzed = analyzedReturns?.get(ann.key);
+      if (analyzed !== undefined) {
+        returnType = analyzed;
+        fnChanged = true;
       }
     }
     if (!fnChanged) continue;

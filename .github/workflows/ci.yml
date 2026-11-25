@@ -161,6 +161,12 @@ jobs:
       - name: Static hygiene & core subdomain gate
         run: pnpm run lint:hygiene
 
+      # 构造 × 面矩阵（Phase 4.1）：产物自编译 + 消费方编译 + degraded 上屏；
+      # 失败集合必须与基线棘轮一致（新增失败即红）。
+      - name: Face matrix
+        if: steps.ts.outputs.ts_changed == 'true'
+        run: pnpm run face:matrix
+
       # Diff 面门禁（加法成本）：源码净增 / 新增源码或测试文件超出
       # scripts/check-diff-face.mjs 的 BUDGET ⇒ PR body 的任务书小节必须非空
       # （模板 .github/PULL_REQUEST_TEMPLATE.md，门禁直接读它取标题）。

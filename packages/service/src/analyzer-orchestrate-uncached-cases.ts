@@ -81,10 +81,6 @@ import { defaultLoadModule } from "./load-module.ts";
 import {
   buildEntryDomain,
   entryThisReceiverOf,
-  namedTypeTextsForSource,
-  typeParamEnvForFunction,
-  valueTypeTextsForSource,
-  type AnnotationEnv,
 } from "@nudojs/core/internal";
 import { tryEvalCall, tryEvalCallFull, tryRunEval } from "./eval-run.ts";
 import {
@@ -100,7 +96,7 @@ import {
 } from "./analyzer-abs-eval.ts";
 import { COLLAPSE_LITERAL_THRESHOLD, dedupeCallRecords } from "./analyzer-diagnose.ts";
 import { extractFormals, extractParamNames, resolveFunctionNode } from "./analyzer-ast.ts";
-import { importedTypeTextsForFile } from "./ts-annotation.ts";
+import { annotationEnvForFile } from "./ts-annotation.ts";
 import type {
   AnalyzeLoadModule,
   CaseHint,
@@ -1345,17 +1341,9 @@ function entryArgAbsListOf(
 ): Abs[] {
   const formals = fnNode ? extractFormals(fnNode, source) : [];
   const paramNodes = (fnNode as unknown as { params?: unknown[] } | undefined)?.params;
-  const annotationEnv: AnnotationEnv = {
-    typeParams: typeParamEnvForFunction(source, fnName),
-    namedTypes: new Map([
-      ...importedTypeTextsForFile(source, filePath),
-      ...namedTypeTextsForSource(source),
-    ]),
-    valueTypes: valueTypeTextsForSource(source),
-  };
   return buildEntryDomain(fnName, source, formals, {
     paramNodes,
-    annotationEnv,
+    annotationEnv: annotationEnvForFile(source, filePath),
   }).args;
 }
 

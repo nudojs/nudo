@@ -5,7 +5,8 @@
  * 分析面签名行解析，以及导出形态 / 构造器 / 字段 / 超类子的组装。继承链证据
  * 由调用方作为参数注入，模块本身不依赖 dts 投影上下文。
  */
-import { sanitizeCommentText } from "@nudojs/core/internal";
+import { leqAbs } from "@nudojs/core";
+import { absTypeForTsTypeText, sanitizeCommentText } from "@nudojs/core/internal";
 import { WELL_KNOWN_SYMBOLS } from "./dts-type.ts";
 import type {
   DtsClassFieldSurface,
@@ -121,11 +122,15 @@ export function classMethodDeclLines(
 }
 
 /**
- * 观测返回串 → 注解证据收窄（BUG-156）。
+ * 观测返回串 → **源码注解证据**收窄（BUG-156；无返回注解的实例方法）。
  *
- * 只做**收窄**：观测是 `unknown`（求值面没有信息）或是**标量联合**且注解证据
- * 是其中一个成员时采用注解证据。反向（注解证据不在观测串里 / 观测是单类型 /
- * 结构化类型）一律不动——本函数**不放宽**，也不改字面量精度（`2` 保持 `2`）。
+ * 只做**收窄**：观测是 `unknown`（求值面没有信息），或观测与注解证据在 Abs 上
+ * 可比（证据 ⊆ 观测域 / 观测 ⊆ 证据域）时采用证据；不可比时回落文本成员
+ * 判据（具名类型 Abs 解析不到时）。反向一律不动——不改字面量精度（`2` 保持 `2`）。
+ *
+ * 只服务**无返回注解**的方法：有注解时返回位由分析面签名单点发布声明
+ * （`tsDeclaredReturn`，含不可解析时的 dropped 台账），这里再介入等于绕过
+ * 那道可解析门。
  */
 export function refineObservedReturn(
   observed: string,
@@ -133,6 +138,13 @@ export function refineObservedReturn(
 ): string {
   if (annotationEvidence === undefined) return observed;
   if (observed === "unknown") return annotationEvidence;
+  const observedAbs = absTypeForTsTypeText(observed);
+  const evidenceAbs = absTypeForTsTypeText(annotationEvidence);
+  if (observedAbs && evidenceAbs) {
+    return leqAbs(observedAbs, evidenceAbs).ok || leqAbs(evidenceAbs, observedAbs).ok
+      ? annotationEvidence
+      : observed;
+  }
   const members = observed.split("|").map((s) => s.trim());
   if (members.length < 2) return observed;
   return members.includes(annotationEvidence) ? annotationEvidence : observed;
@@ -182,8 +194,13 @@ export function dtsClassDeclaration(
   for (const m of [...instanceSurface, ...staticSurface]) {
     if (m.accessibility) accessibility.set(m.name, m.accessibility);
   }
+  // BUG-156：只给**无返回注解**的实例方法补源码注解证据。有注解的方法返回位
+  // 已由分析面签名发布声明（`tsDeclaredReturn`：不可解析 ⇒ dropped 台账 +
+  // 观测；手写契约返回位优先）——这里再拿证据改写会绕过那道门。
   const refineAnnotationReturn = (member: string, lines: string[]): string[] => {
-    const evidence = instanceSurface.find((x) => x.name === member)?.annotationReturnType;
+    const own = instanceSurface.find((x) => x.name === member);
+    if (own === undefined || own.returnType !== undefined) return lines;
+    const evidence = own.annotationReturnType;
     if (evidence === undefined || lines.length === 0) return lines;
     const last = lines[lines.length - 1]!;
     const sig = /^(.*\)\s*:\s*)(.+?)(;\s*)$/.exec(last);
@@ -266,11 +283,12 @@ export function dtsClassDeclaration(
   for (const a of cls?.accessors ?? []) {
     const acc = a.accessibility ? `${a.accessibility} ` : "";
     const st = a.isStatic ? "static " : "";
+    const ab = a.isAbstract ? "abstract " : "";
     const key = memberKeyText(a.name, a.symbolKey);
     body.push(
       a.kind === "get"
-        ? `${acc}${st}get ${key}(): ${a.type};`
-        : `${acc}${st}set ${key}(v: ${a.type});`,
+        ? `${acc}${st}${ab}get ${key}(): ${a.type};`
+        : `${acc}${st}${ab}set ${key}(v: ${a.type});`,
     );
   }
   for (const f of fields) {

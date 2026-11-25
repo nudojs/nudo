@@ -13,6 +13,7 @@ import {
   unknown,
 } from "@nudojs/core";
 import { ProjectionBudget } from "@nudojs/core/internal";
+import { widenTopLevelAbs } from "./abs-widen.ts";
 import { absToTSTypeIr } from "./dts-context.ts";
 
 export function slotAbsOf(a: Abs, k: string, fallback: Abs): Abs {
@@ -242,36 +243,6 @@ export function widenReturnAbs(a: Abs, deep: boolean): Abs {
     return { ...widened, shape: { k: "arr", element: anyAbs }, term: undefined, pred: undefined };
   }
   return widened;
-}
-
-/** 返回位（协变）：仅顶层（含 sum 成员）标量字面量 → 基类型，嵌套精度保留 */
-export function widenTopLevelAbs(a: Abs): Abs {
-  if (a.shape.k === "sum") {
-    return makeAbs(
-      { k: "sum", members: a.shape.members.map(widenTopLevelAbs) },
-      undefined,
-      undefined,
-      a.conf,
-    );
-  }
-  return widenLiteralToPrimAbs(a);
-}
-
-export function widenLiteralToPrimAbs(a: Abs): Abs {
-  if (a.term?.op === "lit" && a.term.value === null) return a;
-  if (a.term?.op === "lit" && a.term.value === undefined) return a;
-  if (a.term?.op === "lit" && a.shape.k === "prim") {
-    const v = a.term.value;
-    if (
-      typeof v === "number" ||
-      typeof v === "string" ||
-      typeof v === "boolean" ||
-      typeof v === "bigint"
-    ) {
-      return makeAbs(a.shape, undefined, undefined, a.conf);
-    }
-  }
-  return a;
 }
 
 /**
